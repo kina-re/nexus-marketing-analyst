@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+from sklearn.linear_model import Ridge
+from sklearn.preprocessing import StandardScaler
 
 
 def geometric_adstock(x: np.ndarray, alpha: float = 0.5):
@@ -48,25 +50,62 @@ def hill_saturation(x: np.ndarray, half_saturation: float = None, slope: float =
 
 
 
-def run_mmm(df: pd.DataFrame, date_col: str = "Date", revenue_col: str= "revenue"):
+
+
+def run_mmm(
+    df: pd.DataFrame,
+    date_col: str = "Date",
+    revenue_col: str = "Revenue",
+    adstock_alpha: float = 0.5,
+    hill_slope: float = 1.0,
+    ridge_alpha: float = 1.0,
+):
+    """
+    Run a revenue-based MMM with adstock + Hill saturation.
 
     
+    """
+
     data = df.copy()
 
-    # check if revenue_col exists
     if revenue_col not in data.columns:
         raise ValueError(f"Missing revenue column: {revenue_col}")
-    
-    # Get spend columns
-    spend_cols = [c for c in data.columns if c not in {date_col, revenue_col}]
+
+    exclude_cols = {date_col, revenue_col, "Conversions"}
+
+    spend_cols = [c for c in data.columns if c not in exclude_cols]
 
     if not spend_cols:
-        raise ValueError("No spend columns found for MMM")
-    
-    # Output placeholder
-    results_df = pd.DataFrame({
-        "channel": spend_cols,
-        "spend": [data[c].sum() for c in spend_cols]
-    })
+        raise ValueError("No spend columns found")
 
-    return results_df
+    y = data[revenue_col].values.astype(float)
+
+    # --- Transform pipeline ---
+    transformed = {}
+
+    for col in spend_cols:
+        ad = geometric_adstock(data[col].values, alpha=adstock_alpha)
+        sat = hill_saturation(ad, slope=hill_slope)
+        transformed[col] = sat
+
+    X = pd.DataFrame(transformed)
+
+    # --- Scale for numerical stability ---
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    # --- Regression ---
+    model = Ridge(alpha=ridge_alpha, fit_intercept=True)
+    model.fit(X_scaled, y)
+
+    y_hat = model.predict(X_scaled)
+
+    r2 = model.score(X_scaled, y)
+
+    return {
+        "coefficients": dict(zip(spend_cols, model.coef_)),
+        "intercept": model.intercept_,
+        "r2": r2,
+        "design_matrix": X,
+        "fitted_values": y_hat,
+    }
