@@ -103,9 +103,97 @@ def run_mmm(
     r2 = model.score(X_scaled, y)
 
     return {
-        "coefficients": dict(zip(spend_cols, model.coef_)),
-        "intercept": model.intercept_,
-        "r2": r2,
-        "design_matrix": X,
-        "fitted_values": y_hat,
-    }
+    "coefficients": dict(zip(spend_cols, model.coef_)),
+    "intercept": model.intercept_,
+    "r2": r2,
+    "design_matrix": X,              
+    "design_matrix_scaled": X_scaled, 
+    "scaler": scaler,                
+    "fitted_values": y_hat,
+}
+
+
+def compute_channel_contribution_and_roi(
+    df: pd.DataFrame,
+    date_col: str = "Date",
+    revenue_col: str = "Revenue",
+    adstock_alpha: float = 0.5,
+    hill_slope: float = 1.0,
+    ridge_alpha: float = 1.0,
+):
+    """
+    Compute counterfactual channel contribution and ROI using MMM.
+
+    """
+
+    # fir mmm once, coefficeint shpould not be reoptimized.
+    mmm = run_mmm(
+        df,
+        date_col=date_col,
+        revenue_col=revenue_col,
+        adstock_alpha=adstock_alpha,
+        hill_slope=hill_slope,
+        ridge_alpha=ridge_alpha,
+    )
+
+    X_unscaled = mmm["design_matrix"]
+    scaler = mmm["scaler"]
+    
+    # Scaled baseline
+    X_scaled = pd.DataFrame(
+    scaler.transform(X_unscaled),
+    columns=X_unscaled.columns
+    )
+
+    coefs = mmm["coefficients"]
+    intercept = mmm["intercept"]
+    fitted = mmm["fitted_values"]
+
+    baseline_revenue = fitted.sum()
+
+    # Identify spend columns (same exclusion rule)
+    exclude_cols = {date_col, revenue_col, "Conversions"}
+    spend_cols = [c for c in df.columns if c not in exclude_cols]
+
+    results = []
+
+    for channel in spend_cols:
+        # Counterfactual in UN-SCALED space
+        X_cf_unscaled = X_unscaled.copy()
+        X_cf_unscaled[channel] = 0.0
+
+        # Re-scale using SAME scaler
+        X_cf_scaled = pd.DataFrame(
+        scaler.transform(X_cf_unscaled),
+        columns=X_unscaled.columns
+        )
+
+        # Predict
+        y_cf = intercept
+        for col, coef in coefs.items():
+            y_cf += coef * X_cf_scaled[col].values
+
+        cf_revenue = y_cf.sum()
+
+        incremental_revenue = baseline_revenue - cf_revenue
+        total_spend = df[channel].sum()
+
+        roi = (
+            incremental_revenue / total_spend
+            if total_spend > 0
+            else float("nan")
+        )
+
+        results.append({
+            "channel": channel,
+            "incremental_revenue": incremental_revenue,
+            "spend": total_spend,
+            "roi": roi,
+        })
+
+    return (
+        pd.DataFrame(results)
+        .sort_values("incremental_revenue", ascending=False)
+        .reset_index(drop=True)
+    )
+       
