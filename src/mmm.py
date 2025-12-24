@@ -119,7 +119,7 @@ def run_mmm(
     model = Ridge(alpha=ridge_alpha, fit_intercept=True)
     model.fit(X_scaled, y)
 
-    y_hat = model.predict(X_scaled)
+    fitted_values = model.predict(X_scaled)
 
     r2 = model.score(X_scaled, y)
 
@@ -130,7 +130,7 @@ def run_mmm(
     "design_matrix": X,              
     "design_matrix_scaled": X_scaled, 
     "scaler": scaler,                
-    "fitted_values": y_hat,
+    "fitted_values": fitted_values,
 }
 
 
@@ -141,6 +141,7 @@ def compute_channel_contribution_and_roi(
     adstock_alpha: float = 0.5,
     hill_slope: float = 1.0,
     ridge_alpha: float = 1.0,
+    spend_floor = 0.0
 ):
     """
     Compute counterfactual channel contribution and ROI using MMM.
@@ -167,10 +168,14 @@ def compute_channel_contribution_and_roi(
     )
 
     coefs = mmm["coefficients"]
-    intercept = mmm["intercept"]
-    fitted = mmm["fitted_values"]
+    intercept = float(mmm["intercept"])
+    #fitted = mmm["fitted_values"]
 
-    baseline_revenue = fitted.sum()
+    # Baseline prediction with all channels present 
+    y_base = intercept
+    for feat, coef in coefs.items():
+        y_base += float(coef) * X_scaled[feat].values
+    baseline_revenue = float(np.sum(y_base))
 
     # Identify spend columns (same exclusion rule)
     exclude_cols = {date_col, revenue_col, "Conversions", "season_sin", "season_cos"}
@@ -179,9 +184,12 @@ def compute_channel_contribution_and_roi(
     results = []
 
     for channel in spend_cols:
-        # Counterfactual in UN-SCALED space
+        # remove signal
         X_cf_unscaled = X_unscaled.copy()
-        X_cf_unscaled[channel] = 0.0
+        if channel in X_cf_unscaled.columns:
+            X_cf_unscaled[channel] = 0.0
+        else:
+            continue
 
         # Re-scale using SAME scaler
         X_cf_scaled = pd.DataFrame(
@@ -191,19 +199,29 @@ def compute_channel_contribution_and_roi(
 
         # Predict
         y_cf = intercept
-        for col, coef in coefs.items():
-            y_cf += coef * X_cf_scaled[col].values
+        control_cols = ["season_sin", "season_cos"]
+        for ctrl in control_cols:
+            if ctrl in coefs:
+                y_cf += float(coefs[ctrl]) * X_cf_scaled[ctrl].values
 
-        cf_revenue = y_cf.sum()
+
+        for col in spend_cols:
+            if col in coefs:
+                y_cf += float(coefs[col]) * X_cf_scaled[col].values
+
+        
+        cf_revenue = float(np.sum(y_cf))
 
         incremental_revenue = baseline_revenue - cf_revenue
-        total_spend = df[channel].sum()
+        total_spend = float(df[channel].sum())
+        
+        if total_spend <= spend_floor:
+            roi = float("nan")
+        else:
+            roi = incremental_revenue / total_spend
 
-        roi = (
-            incremental_revenue / total_spend
-            if total_spend > 0
-            else float("nan")
-        )
+
+     
 
         results.append({
             "channel": channel,
