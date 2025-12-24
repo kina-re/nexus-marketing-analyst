@@ -49,6 +49,19 @@ def hill_saturation(x: np.ndarray, half_saturation: float = None, slope: float =
     return numerator / (denominator + 1e-9)
 
 
+def add_seasonality_features(df: pd.DataFrame, date_col: str) -> pd.DataFrame:
+    """
+    Add smooth annual seasonality using Fourier terms.
+    """
+    out = df.copy()
+    out[date_col] = pd.to_datetime(out[date_col])
+
+    day_of_year = out[date_col].dt.dayofyear.values
+
+    out["season_sin"] = np.sin(2 * np.pi * day_of_year / 365.25)
+    out["season_cos"] = np.cos(2 * np.pi * day_of_year / 365.25)
+
+    return out
 
 
 
@@ -68,10 +81,15 @@ def run_mmm(
 
     data = df.copy()
 
+    data = add_seasonality_features(data, date_col)
+
+
     if revenue_col not in data.columns:
         raise ValueError(f"Missing revenue column: {revenue_col}")
+    
+    control_cols = ["season_sin", "season_cos"]
 
-    exclude_cols = {date_col, revenue_col, "Conversions"}
+    exclude_cols = {date_col, revenue_col, "Conversions", *control_cols}
 
     spend_cols = [c for c in data.columns if c not in exclude_cols]
 
@@ -88,7 +106,10 @@ def run_mmm(
         sat = hill_saturation(ad, slope=hill_slope)
         transformed[col] = sat
 
-    X = pd.DataFrame(transformed)
+    X_spend = pd.DataFrame(transformed)
+    X_controls = data[control_cols].reset_index(drop=True)
+
+    X = pd.concat([X_spend, X_controls], axis=1)
 
     # --- Scale for numerical stability ---
     scaler = StandardScaler()
@@ -152,7 +173,7 @@ def compute_channel_contribution_and_roi(
     baseline_revenue = fitted.sum()
 
     # Identify spend columns (same exclusion rule)
-    exclude_cols = {date_col, revenue_col, "Conversions"}
+    exclude_cols = {date_col, revenue_col, "Conversions", "season_sin", "season_cos"}
     spend_cols = [c for c in df.columns if c not in exclude_cols]
 
     results = []
