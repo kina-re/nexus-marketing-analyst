@@ -298,3 +298,60 @@ def removal_effects(prob_df, absorbing_states, baseline_N, R_matrix):
         results[channel] = round(drop_pp, 2)
 
     return pd.Series(results).sort_values(ascending=False)
+
+
+def top_converting_paths(
+    df_paths,
+    journey_col="user_journey",
+    result_col="result",
+    top_n=10,
+    min_conversions=1,
+):
+    """
+    Returns the top converting channel paths with collective contribution.
+    Robust to all pandas versions.
+    """
+
+    # 1. Keep only converted journeys
+    converted = df_paths[df_paths[result_col] == "conversion"]
+
+    # 2. Clean journeys: remove start & terminal states
+    cleaned_paths = converted[journey_col].apply(
+        lambda p: tuple(
+            ch for ch in p
+            if ch not in ("start", "conversion", "dropped")
+        )
+    )
+
+    # 3. EXPLICIT aggregation (no value_counts magic)
+    path_counts = (
+        cleaned_paths
+        .groupby(cleaned_paths)
+        .size()
+        .reset_index(name="conversions")
+        .rename(columns={journey_col: "path"})
+    )
+
+    # 4. Filter weak paths
+    path_counts = path_counts[path_counts["conversions"] >= min_conversions]
+
+    if path_counts.empty:
+        return pd.DataFrame(columns=["path", "conversions", "share_of_conversions_pct"])
+
+    total_conversions = path_counts["conversions"].sum()
+
+    path_counts["share_of_conversions_pct"] = (
+        100 * path_counts["conversions"] / total_conversions
+    ).round(2)
+
+    # 5. Human-readable path
+    path_counts["path"] = path_counts["path"].apply(lambda p: " → ".join(p))
+
+    return (
+        path_counts
+        .sort_values("conversions", ascending=False)
+        .head(top_n)
+        .reset_index(drop=True)
+    )
+
+
