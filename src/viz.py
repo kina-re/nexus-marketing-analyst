@@ -108,23 +108,31 @@ def plot_sankey_from_matrix(df_counts):
                 targets.append(label_to_index[to_label])
                 values.append(count)
 
+    # 🎨 Light-mode color palette
+    node_colors = ["#4A90E2"] * len(labels)  # soft blue
+    link_colors = ["rgba(74, 144, 226, 0.35)"] * len(values)            
+
     # Create Sankey figure
     sankey_fig = go.Figure(data=[go.Sankey(
         node=dict(
             pad=15,
             thickness=20,
-            line=dict(color="black", width=0.5),
+            line=dict(color="#CCCCCC", width=0.5),
             label=labels,
-            color="skyblue"
+            color=node_colors
         ),
         link=dict(
             source=sources,
             target=targets,
             value=values,
-            color="lightgreen"
+            color=link_colors
         ))])
 
-    sankey_fig.update_layout(title_text="Sankey Diagram of Channel Transitions", font_size=12)
+    sankey_fig.update_layout(title_text="Sankey Diagram of Channel Transitions", 
+                             font=dict(size=13, color="#333333"),
+                             paper_bgcolor="white",
+                             plot_bgcolor="white",
+                             height=700)
     sankey_fig.show()
 
 
@@ -287,8 +295,8 @@ def generate_sankey_pro(df_paths, journey_col="user_journey", min_threshold=0.00
         values.append(count)
 
         # Impact-based coloring (scaled)
-        impact_intensity = int((count / max_count) * 255)
-        colors.append(f"rgba(0,255,{impact_intensity},0.35)")  # Green → Aqua by intensity
+        impact_intensity = int(120 + (count / max_count) * 80)
+        colors.append(f"rgba(74,144,{impact_intensity},0.45)")  # Green → Aqua by intensity
 
         # Only major flows get labels
         if pct >= min_threshold * 100:
@@ -298,18 +306,18 @@ def generate_sankey_pro(df_paths, journey_col="user_journey", min_threshold=0.00
 
     # 4️⃣ Color nodes
     node_colors = [
-        "rgba(0, 204, 255, 0.9)" if s not in ['conversion','dropped']
-        else ('rgba(0,255,0,0.9)' if s=='conversion'
-              else 'rgba(255,0,0,0.9)')
+        "#4A90E2" if s not in ["conversion", "dropped"]
+        else "#2ECC71" if s == "conversion"
+        else "#E74C3C"
         for s in states
     ]
 
     # 5️⃣ Build figure
     fig = go.Figure(data=[go.Sankey(
         node=dict(
-            pad=18,
-            thickness=20,
-            line=dict(color="white", width=0.5),
+            pad=20,
+            thickness=22,
+            line=dict(color="#DDDDDD", width=0.5),
             label=states,
             color=node_colors
         ),
@@ -328,10 +336,10 @@ def generate_sankey_pro(df_paths, journey_col="user_journey", min_threshold=0.00
 
     fig.update_layout(
         title_text="Customer Journey — Major Paths (Counts + % Share + Impact Color)",
-        font=dict(color="white", size=14),
-        paper_bgcolor="black",
-        plot_bgcolor="black",
-        height=780
+        font=dict(color="#333", size=14),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        height=750
     )
 
     #fig.show()

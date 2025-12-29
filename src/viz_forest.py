@@ -1,101 +1,134 @@
-import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
-from scipy.stats import norm
+import pandas as pd
+import numpy as np
 
-def plot_prior_distributions(
-    prior_df: pd.DataFrame, 
-    min_rel_sigma: float = 0.10, 
-    max_rel_sigma: float = 1.0,   
-    show_plot: bool = True
-):
+def _add_sigma(prior_df: pd.DataFrame, min_rel_sigma: float = 0.10, max_rel_sigma: float = 1.0) -> pd.DataFrame:
     """
-    Generates a Matplotlib figure of prior distributions.
-    Returns: (fig, updated_prior_df)
+    Adds sigma to prior_df heuristically.
+    Used as a fallback if Markov/Shapley divergence cannot be calculated.
     """
-    # 1. Translate Confidence -> Sigma
-    prior_df = prior_df.copy()
+    df = prior_df.copy()
+
+    # We need 'attr_weight' to calculate sigma. 
+    # If it's missing, try to create it from any available 'share' columns.
+    if "attr_weight" not in df.columns:
+        share_cols = [c for c in df.columns if 'share' in c]
+        if share_cols:
+            df['attr_weight'] = df[share_cols].mean(axis=1)
+        else:
+            # If we can't find weights, we can't calculate sigma scale. Return as is.
+            return df
+
+    if "confidence" not in df.columns:
+        df["confidence"] = 0.5
+
+    df["confidence"] = pd.to_numeric(df["confidence"], errors="coerce").fillna(0.5).clip(0.0, 0.95)
+
+    df["relative_sigma"] = max_rel_sigma - (df["confidence"] * (max_rel_sigma - min_rel_sigma))
+
+    global_scale = float(df["attr_weight"].mean()) if len(df) else 0.01
+    if global_scale <= 0:
+        global_scale = 0.01
+
+    df["sigma"] = global_scale * df["relative_sigma"]
+
+    # Avoid ultra narrow / huge priors
+    df["sigma"] = np.clip(df["sigma"], a_min=0.01 * global_scale, a_max=2.0 * global_scale)
+    return df
+
+def plot_prior_distributions(prior_df, show_plot=False):
+    """
+    Generates a Forest Plot comparing Attribution Models.
     
-    prior_df['relative_sigma'] = max_rel_sigma - (
-        prior_df['confidence'] * (max_rel_sigma - min_rel_sigma)
+    RETURNS:
+    - fig: The matplotlib figure object.
+    - df: The dataframe with sigma/confidence columns.
+    """
+    
+    # 1. Initialize Figure (Prevent NoneType error)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # 2. Handle Empty Data
+    if prior_df is None or prior_df.empty:
+        ax.text(0.5, 0.5, "No Attribution Data Available", ha='center')
+        return fig, prior_df
+
+    df = prior_df.copy()
+    
+    # 3. Try Standard Calculation (Markov vs Shapley)
+    if 'markov_share' in df.columns and 'shapley_share' in df.columns:
+        # Mean Attribution
+        df['attr_weight'] = (df['markov_share'] + df['shapley_share']) / 2
+        
+        # Sigma (Divergence between models)
+        df['sigma'] = df[['markov_share', 'shapley_share']].std(axis=1)
+        
+        # If models agree perfectly, sigma is 0. Add tiny noise to avoid div/0 later
+        df['sigma'] = df['sigma'].replace(0, 0.001)
+
+    # 4. FALLBACK: If Sigma is still missing (e.g. columns missing), use your helper function
+    if 'sigma' not in df.columns or df['sigma'].isna().all():
+        print("⚠️ [Forest Plot] Standard Sigma calc failed. Using heuristic fallback (_add_sigma).")
+        df = _add_sigma(df)
+
+    # 5. Final Safety Check (Ensure columns exist for plotting)
+    if 'attr_weight' not in df.columns or 'sigma' not in df.columns:
+        # If fallback also failed, create dummy cols to prevent crash
+        if 'attr_weight' not in df.columns and 'markov_share' in df.columns:
+            df['attr_weight'] = df['markov_share']
+        df['sigma'] = df.get('sigma', 0.01)
+        df['attr_weight'] = df.get('attr_weight', 0.1)
+
+    # 6. Calculate Confidence & Intervals for Plotting
+    # (Recalculate confidence derived from sigma if not already set)
+    if 'confidence' not in df.columns:
+        df['confidence'] = 1 - (df['sigma'] / (df['attr_weight'] + 0.0001))
+        df['confidence'] = df['confidence'].clip(0, 1)
+
+    df['lower_bound'] = df['attr_weight'] - (1.96 * df['sigma'])
+    df['upper_bound'] = df['attr_weight'] + (1.96 * df['sigma'])
+    
+    # Sort
+    df = df.sort_values('attr_weight', ascending=True)
+
+    # 7. Plotting
+    y_pos = np.arange(len(df))
+    
+    # Forest Plot Error Bars
+    ax.errorbar(
+        x=df['attr_weight'], 
+        y=y_pos, 
+        xerr=1.96 * df['sigma'], 
+        fmt='o', 
+        color='#1E40AF',
+        ecolor='#3B82F6',
+        elinewidth=3,
+        capsize=5,
+        markersize=8,
+        label='Mean Attribution (±95% CI)'
     )
     
-    # Calculate absolute sigma (Standard Deviation)
-    global_scale = prior_df["attr_weight"].mean()
-    # Handle edge case if mean is 0
-    if global_scale == 0: global_scale = 0.01
-        
-    prior_df['sigma'] = global_scale * prior_df['relative_sigma']
+    # Add Markers if columns exist
+    if 'markov_share' in df.columns:
+        ax.scatter(df['markov_share'], y_pos, color='#EF4444', marker='|', s=50, label='Markov', alpha=0.6)
+    if 'shapley_share' in df.columns:
+        ax.scatter(df['shapley_share'], y_pos, color='#10B981', marker='|', s=50, label='Shapley', alpha=0.6)
 
-    # Avoid ultra narrow priors
-    prior_df['sigma'] = np.clip(
-        prior_df['sigma'],
-        a_min=0.01 * global_scale,
-        a_max=2.0 * global_scale
-    )
-
-    if not show_plot:
-        return None, prior_df
-
-    # 2. Filter out "Epsilon" channels for plotting only
-    # We hide channels with weight < 0.001 (0.1%)
-    plot_data = prior_df[prior_df['attr_weight'] > 0.001].sort_values("attr_weight", ascending=False)
+    # Labels
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(df['channel'], fontsize=10, fontweight='bold')
+    ax.set_xlabel('Attribution Share', fontsize=10)
+    ax.set_title('Attribution Model Consensus (Forest Plot)', fontsize=14, fontweight='bold')
+    ax.grid(axis='x', linestyle='--', alpha=0.5)
     
-    if len(plot_data) == 0:
-        plot_data = prior_df.sort_values("attr_weight", ascending=False).head(5)
+    # Clean up spines
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_visible(False)
 
-    # 3. Setup Plot (Object-Oriented for Streamlit)
-    fig, ax = plt.subplots(figsize=(10, 5))
-    sns.set_style("whitegrid")
-    
-    # Generate X-axis
-    # We add 30% padding to the right
-    x_max = plot_data['attr_weight'].max() * 1.3
-    if x_max == 0: x_max = 1.0 # Safety check
-        
-    # INCREASED RESOLUTION: 2000 points to capture sharp spikes
-    x = np.linspace(0, x_max, 2000)
-    
-    colors = sns.color_palette("tab10", n_colors=len(plot_data))
-
-    # Optional: Print to console for server logs (Streamlit users won't see this)
-    print(f"{'Channel':<20} | {'Weight':<8} | {'Conf':<6} | {'Sigma':<8} | {'Implied Range (±2σ)'}")
-    print("-" * 85)
-
-    max_y_density = 0
-
-    for i, (idx, row) in enumerate(plot_data.iterrows()):
-        mu = row['attr_weight']
-        sigma = row['sigma']
-        
-        y = norm.pdf(x, loc=mu, scale=sigma)
-        
-        # Track max height from ALL plotted channels
-        if len(y) > 0:
-            max_y_density = max(max_y_density, y.max())
-        
-        # Plot on 'ax' instead of 'plt'
-        ax.plot(x, y, label=f"{row['channel']} ({row['confidence']:.2f})", color=colors[i], linewidth=2)
-        ax.fill_between(x, y, alpha=0.1, color=colors[i])
-        
-        lower = max(0, mu - 2*sigma)
-        upper = mu + 2*sigma
-        print(f"{row['channel']:<20} | {mu:.4f}   | {row['confidence']:.2f}   | {sigma:.4f}   | {lower:.3f} - {upper:.3f}")
-
-    # 4. Smart Axis Scaling
-    ax.set_title("Prior Distributions (Attribution Confidence)", fontsize=14)
-    ax.set_xlabel("Attribution Weight", fontsize=11)
-    ax.set_ylabel("Probability Density", fontsize=11)
-    
-    # Set Y-limit to fit the tallest spike + 10% padding
-    if max_y_density > 0:
-        ax.set_ylim(0, max_y_density * 1.1)
-        
-    ax.legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0, fontsize=10)
-    
-    # Clean up layout
     plt.tight_layout()
     
-    # RETURN the figure object so Streamlit can use st.pyplot(fig)
-    return fig, prior_df
+    if show_plot:
+        plt.show()
+        
+    return fig, df

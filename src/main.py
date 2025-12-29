@@ -8,7 +8,7 @@ from datetime import datetime
 
 # --- FIX: FORCE NON-INTERACTIVE BACKEND ---
 import matplotlib
-matplotlib.use('Agg') # <--- THIS STOPS POPUPS
+matplotlib.use('Agg') 
 import matplotlib.pyplot as plt
 
 # --- PIPELINE IMPORTS ---
@@ -23,8 +23,6 @@ from viz import generate_sankey_pro
 from mmm import compute_channel_contribution_and_roi
 from reasoning import ReasoningEngine 
 import llm_analyst as nexus 
-
-# --- REPORTING IMPORTS ---
 import viz_report
 import pdf_generator
 
@@ -45,38 +43,35 @@ def parse_nexus_report(text):
         'r_matrix_insight': "Insight unavailable.",
         'removal_insight': "Insight unavailable."
     }
-    
-    if "⚠️" in text or "Error" in text[:50]:
-        return sections
-
+    if "⚠️" in text or "Error" in text[:50]: return sections
     clean_text = re.sub(r'\*\*\[(.*?)\]\*\*', r'[\1]', text) 
     tokens = re.split(r"\[([A-Z ]+)\]", clean_text, flags=re.IGNORECASE)
-
     header_map = {
         'EXECUTIVE SUMMARY': 'executive_summary',
         'Q MATRIX': 'q_matrix_insight',
         'R MATRIX': 'r_matrix_insight',
         'REMOVAL EFFECTS': 'removal_insight'
     }
-
     for i in range(1, len(tokens)-1, 2):
         header = tokens[i].strip().upper()
         content = tokens[i+1].strip()
-        if header in header_map:
-            sections[header_map[header]] = content
-            
+        if header in header_map: sections[header_map[header]] = content
     return sections
 
-# --- UPDATED FUNCTION SIGNATURE TO ACCEPT PATHS ---
-def run_analysis_pipeline(ga_path, mmm_path, output_dir):
-    print("⏳ Running Attribution Models...")
+# --- UPDATED: Added status_callback parameter ---
+def run_analysis_pipeline(ga_path, mmm_path, output_dir, status_callback=None):
     
-    # Use the paths passed from Streamlit
+    # Helper to print AND update UI
+    def log(message):
+        print(message)
+        if status_callback:
+            status_callback(message)
+
+    log("⏳ Running Attribution Models (Markov & Shapley)...")
+    
     ga_path = Path(ga_path)
     mmm_path = Path(mmm_path)
     output_dir = Path(output_dir)
-    
-    # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
 
     ga_df = pd.read_csv(ga_path, low_memory=False)
@@ -89,8 +84,8 @@ def run_analysis_pipeline(ga_path, mmm_path, output_dir):
     N = compute_fundamental_matrix(Q)
     markov_removal = removal_effects(prob_df, ['conversion', 'dropped'], N, R)
 
-    # 2. GENERATE PDF CHARTS
-    print("🎨 Generating Report Charts...")
+    # 2. GENERATE CHARTS
+    log("🎨 Generating Report Charts...")
     img_paths = {
         'q_matrix': str(output_dir / "q_matrix.png"),
         'r_matrix': str(output_dir / "r_matrix.png"),
@@ -104,20 +99,28 @@ def run_analysis_pipeline(ga_path, mmm_path, output_dir):
         img_paths['conv_probs'] = str(output_dir / "conv_probs.png")
         viz_report.plot_conversion_probs(R['conversion'], img_paths['conv_probs'])
 
-    # 3. SHAPLEY & TOP PATHS
+    # 3. SHAPLEY
     shap_df = preprocess_for_shapley(df_paths)
     shapley_pct = compute_shapley(shap_df)
     top_paths = top_converting_paths(df_paths, top_n=10)
     
-    # 4. FOREST PLOT & SIGMA
+    # 4. FOREST PLOT
     prior_df = synthesize_attribution_prior(markov_removal, shapley_pct)
-    res = plot_prior_distributions(prior_df, show_plot=False)
-    prior_df_with_sigma = res[1] if isinstance(res, tuple) else res
+    
+    # UNPACK THE TUPLE (Fig, DF)
+    fig_forest, prior_df_with_sigma = plot_prior_distributions(prior_df, show_plot=False)
     
     forest_path = output_dir / "attribution_forest_plot.png"
-    Image.open(img_paths['removal']).save(forest_path) 
+    
+    # SAVE AND CLOSE
+    if fig_forest is not None:
+        fig_forest.savefig(str(forest_path), bbox_inches='tight')
+        plt.close(fig_forest)
+    else:
+        print("⚠️ Warning: Forest Plot figure was None. Skipping save.")
 
-    # 5. SANKEY DIAGRAM (Save to output_dir)
+    # 5. SANKEY
+    log("🌊 generating Sankey Diagram...")
     sankey_fig = generate_sankey_pro(df_paths)
     sankey_path = output_dir / "customer_journey_sankey.html"
     sankey_fig.write_html(str(sankey_path))
@@ -128,12 +131,9 @@ def run_analysis_pipeline(ga_path, mmm_path, output_dir):
     mmm_df = normalize_mmm_channels(mmm_raw_df)
     if 'Date' in mmm_df.columns: mmm_df['Date'] = pd.to_datetime(mmm_df['Date'])
     mmm_df = mmm_df.T.groupby(level=0).sum().T
-    #if 'paid_search' in mmm_df.columns and 'display' in mmm_df.columns:
-       # mmm_df['performance_ads'] = mmm_df['paid_search'] + mmm_df['display']
-       # mmm_df = mmm_df.drop(columns=['paid_search', 'display'])
+    
     roi_df = compute_channel_contribution_and_roi(df=mmm_df, date_col='Date', revenue_col='Revenue')
     roi_df['match_key'] = roi_df['channel'].apply(lambda x: x.lower().strip().replace(' ', '_'))
-    
     total_rev = roi_df['incremental_revenue'].sum()
     roi_df['mmm_share'] = roi_df['incremental_revenue'] / total_rev if total_rev > 0 else 0
 
@@ -143,38 +143,24 @@ def run_analysis_pipeline(ga_path, mmm_path, output_dir):
         on='match_key', how='left'
     ).fillna(0)
 
-    # 7. LLM REPORT WRITING
-    print("🧠 Nexus is writing the Executive Report...")
-    
+    # 7. LLM REPORT
+    log("🧠 Nexus is analyzing strategy & writing report...")
     full_prompt = f"""
-    [ROLE]
-    You are 'Nexus', a Senior Marketing Strategist. 
-
-    [DATA 1: ROI & ATTRIBUTION]
-    {comparison_df.to_string()}
-    
-    [DATA 2: TRANSITION MATRIX (Q)]
-    {Q.to_string()}
-    
-    [DATA 3: ABSORPTION MATRIX (R)]
-    {R.to_string()}
-    
-    [DATA 4: REMOVAL EFFECTS]
-    {markov_removal.to_string()}
-    
-    [INSTRUCTIONS]
-    Analyze the strategy. Identify "Optimization Opportunities" and "Critical Drivers".
-    Use EXACTLY these tags: [EXECUTIVE SUMMARY], [Q MATRIX], [R MATRIX], [REMOVAL EFFECTS].
+    [ROLE] Senior Marketing Strategist. 
+    [DATA] {comparison_df.to_string()}
+    [INSTRUCTIONS] Identify optimization opportunities.
+    Use tags: [EXECUTIVE SUMMARY], [Q MATRIX], [R MATRIX], [REMOVAL EFFECTS].
     """
-
     raw_report = nexus.chat_with_data(full_prompt, "")
     report_data = parse_nexus_report(raw_report)
 
     # 8. COMPILE PDF
-    print("📄 Compiling PDF...")
+    log("📄 Compiling PDF...")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     pdf_name = f"Nexus_Marketing_Report_{timestamp}.pdf"
     pdf_path = pdf_generator.generate_full_report(report_data, img_paths, str(output_dir / pdf_name))
+
+    log("✅ Analysis Pipeline Complete.")
 
     return {
         "pdf_path": pdf_path,
@@ -183,5 +169,5 @@ def run_analysis_pipeline(ga_path, mmm_path, output_dir):
         "img_paths": img_paths,
         "sankey_path": sankey_path,
         "forest_path": forest_path,
-        "report_data": report_data # Return text data for dashboard display
+        "report_data": report_data
     }

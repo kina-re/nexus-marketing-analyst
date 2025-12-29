@@ -4,6 +4,7 @@ import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
+from PIL import Image
 
 # Add 'src' to python path
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
@@ -197,12 +198,36 @@ if st.session_state.results:
 
     # --- TAB 3: VISUALS ---
     with tab_viz:
-        st.subheader("Customer Journey Flow (Sankey)")
+        # 1. Forest Plot (Top - The Strategic Summary)
+        st.markdown("### 🌲 Attribution Uncertainty (Forest Plot)")
+        if res.get('forest_path') and os.path.exists(res['forest_path']):
+            img = Image.open(res['forest_path'])
+            st.image(img, caption="Consensus Attribution (Markov + Shapley)", use_container_width=True)
+        else:
+            st.warning("Forest plot not found. Check Step 4 in main.py.")
+            
+        st.divider()
+        
+        # 2. Sankey Diagram (Middle - The Journey Story)
+        st.markdown("### 🌊 Customer Journey Flow")
+        st.caption("Visualizes how users move between channels before converting.")
+        
         if os.path.exists(res['sankey_path']):
             with open(res['sankey_path'], 'r', encoding='utf-8') as f:
                 html_data = f.read()
-            st.components.v1.html(html_data, height=600, scrolling=True)
-            
+            # Give it full width and plenty of height
+            st.components.v1.html(html_data, height=700, scrolling=True)
+        
         st.divider()
-        st.subheader("Transition Probabilities (Q-Matrix)")
-        st.image(str(res['img_paths']['q_matrix']), caption="User Flow Heatmap", width=700)
+
+        # 3. Transition Matrix (Bottom - The Mathematical Details)
+        st.markdown("### 🔄 Transition Probabilities (Q-Matrix)")
+        st.caption("Heatmap showing the probability of moving from one channel to another.")
+        
+        if os.path.exists(res['img_paths']['q_matrix']):
+            q_img = Image.open(res['img_paths']['q_matrix'])
+            
+            # Optional: Center the heatmap so it doesn't stretch weirdly on huge screens
+            c1, c2, c3 = st.columns([1, 3, 1]) 
+            with c2:
+                st.image(q_img, caption="User Flow Heatmap", use_container_width=True)
