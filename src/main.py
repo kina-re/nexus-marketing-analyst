@@ -6,6 +6,11 @@ import re
 from PIL import Image 
 from datetime import datetime
 
+# --- FIX: FORCE NON-INTERACTIVE BACKEND ---
+import matplotlib
+matplotlib.use('Agg') # <--- THIS STOPS POPUPS
+import matplotlib.pyplot as plt
+
 # --- PIPELINE IMPORTS ---
 from markov_shapley import (
     create_user_journeys, create_transition_matrix, extract_q_matrix,
@@ -123,9 +128,9 @@ def run_analysis_pipeline(ga_path, mmm_path, output_dir):
     mmm_df = normalize_mmm_channels(mmm_raw_df)
     if 'Date' in mmm_df.columns: mmm_df['Date'] = pd.to_datetime(mmm_df['Date'])
     mmm_df = mmm_df.T.groupby(level=0).sum().T
-    if 'paid_search' in mmm_df.columns and 'display' in mmm_df.columns:
-        mmm_df['performance_ads'] = mmm_df['paid_search'] + mmm_df['display']
-        mmm_df = mmm_df.drop(columns=['paid_search', 'display'])
+    #if 'paid_search' in mmm_df.columns and 'display' in mmm_df.columns:
+       # mmm_df['performance_ads'] = mmm_df['paid_search'] + mmm_df['display']
+       # mmm_df = mmm_df.drop(columns=['paid_search', 'display'])
     roi_df = compute_channel_contribution_and_roi(df=mmm_df, date_col='Date', revenue_col='Revenue')
     roi_df['match_key'] = roi_df['channel'].apply(lambda x: x.lower().strip().replace(' ', '_'))
     

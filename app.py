@@ -20,7 +20,7 @@ st.set_page_config(
 
 load_dotenv()
 
-# --- CUSTOM CSS FOR ELEGANT TABLES ---
+# --- CUSTOM CSS ---
 st.markdown("""
 <style>
     .main-header {
@@ -34,7 +34,6 @@ st.markdown("""
         color: #64748B;
         margin-bottom: 20px;
     }
-    /* Enhance Table Headers */
     th {
         background-color: #F8FAFC !important;
         color: #334155 !important;
@@ -43,13 +42,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR: SETUP & UPLOAD ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/8637/8637103.png", width=70)
     st.markdown("### Nexus Control")
     st.caption("Secure Cloud Environment")
     
-    # Security Check
     if os.getenv("GEMINI_API_KEY"):
         st.success("🔐 API Key Active")
         btn_disabled = False
@@ -58,7 +56,6 @@ with st.sidebar:
         btn_disabled = True
     
     st.divider()
-    
     st.write("**Data Upload**")
     ga_file = st.file_uploader("Google Analytics (CSV)", type=["csv"])
     mmm_file = st.file_uploader("MMM Data (CSV)", type=["csv"])
@@ -66,35 +63,22 @@ with st.sidebar:
     st.markdown("---")
     process_btn = st.button("🚀 Run Analysis", type="primary", use_container_width=True, disabled=btn_disabled)
 
-# --- HELPER: ELEGANT TABLE FORMATTING ---
-def format_percent(val):
-    return "{:.2%}".format(val) if isinstance(val, (float, int)) else val
-
-def format_currency(val):
-    return "${:,.2f}".format(val) if isinstance(val, (float, int)) else val
-
-def format_float(val):
-    return "{:.4f}".format(val) if isinstance(val, (float, int)) else val
-
 # --- MAIN LOGIC ---
-
 if "results" not in st.session_state:
     st.session_state.results = None
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Header
 st.markdown('<div class="main-header">🧠 Nexus Intelligence</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-text">AI-Powered Marketing Attribution & Strategy</div>', unsafe_allow_html=True)
 
 if process_btn:
     if not ga_file or not mmm_file:
-        st.warning("⚠️ Please upload both GA and MMM files to begin.")
+        st.warning("⚠️ Please upload both GA and MMM files.")
     else:
-        with st.spinner("⏳ Nexus is processing data & generating insights..."):
+        with st.spinner("⏳ Nexus is processing data..."):
             try:
-                # 1. Setup Temp Paths
                 temp_dir = Path("temp_uploads")
                 output_dir = Path("output")
                 os.makedirs(temp_dir, exist_ok=True)
@@ -106,73 +90,62 @@ if process_btn:
                 with open(ga_path, "wb") as f: f.write(ga_file.getbuffer())
                 with open(mmm_path, "wb") as f: f.write(mmm_file.getbuffer())
                 
-                # 2. Run Pipeline
                 results = pipeline_main.run_analysis_pipeline(ga_path, mmm_path, output_dir)
                 st.session_state.results = results
                 
-                # 3. Initialize Chat
                 if not st.session_state.messages:
                     st.session_state.messages = [
                         {"role": "assistant", "content": "Analysis complete. I have processed your Attribution, MMM, and Shapley values. What would you like to know?"}
                     ]
-                
                 st.success("✅ Analysis Ready!")
-                
             except Exception as e:
                 st.error(f"Pipeline Error: {e}")
-                st.code(str(e))
 
-# --- DISPLAY TABS ---
+# --- TABS ---
 if st.session_state.results:
     res = st.session_state.results
     
-    # NEW TAB STRUCTURE: Chat First, Then Data
     tab_chat, tab_data, tab_viz = st.tabs(["🧠 Nexus Chat", "📊 Data Tables", "🗺️ Journey Maps"])
     
-    # --- TAB 1: NEXUS CHAT (Primary Interface) ---
+    # --- TAB 1: CHAT ---
     with tab_chat:
-        # Chat container
         chat_container = st.container(height=500)
-        
         with chat_container:
             for message in st.session_state.messages:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
 
-        # Input
         if prompt := st.chat_input("Ask about ROI, Channels, or Strategy..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with chat_container:
                 with st.chat_message("user"):
                     st.markdown(prompt)
-
                 with st.chat_message("assistant"):
                     placeholder = st.empty()
                     placeholder.markdown("🧠 *Thinking...*")
                     
-                    # Context Injection
                     image_path = None
                     if 'matrix' in prompt.lower(): image_path = str(res['img_paths']['q_matrix'])
                     elif 'removal' in prompt.lower(): image_path = str(res['img_paths']['removal'])
                     
                     context_str = res['prior_df'].to_string()
                     response = nexus.chat_with_data(prompt, context_str, image_path)
-                    
                     placeholder.markdown(response)
-            
             st.session_state.messages.append({"role": "assistant", "content": response})
 
-    # --- TAB 2: DATA TABLES (Elegant Formats) ---
+    # --- TAB 2: DATA TABLES (Fixed Index) ---
     with tab_data:
         st.caption("Raw strategic data processed by the pipeline.")
-        
         col1, col2 = st.columns(2)
         
-        # 1. ROI vs Attribution
+        # 1. ROI TABLE
         with col1:
             st.subheader("💰 ROI vs Attribution")
             df_roi = res['prior_df'][['channel', 'roi', 'mmm_share', 'attr_weight']].copy()
-            # Style
+            
+            # --- FIX: Start Index at 1 ---
+            df_roi.index = range(1, len(df_roi) + 1)
+            
             st.dataframe(
                 df_roi.style.format({
                     'roi': "{:.2f}",
@@ -182,10 +155,14 @@ if st.session_state.results:
                 use_container_width=True
             )
 
-        # 2. Attribution with Sigma (Confidence)
+        # 2. CONFIDENCE TABLE
         with col2:
             st.subheader("📉 Attribution Confidence (Sigma)")
             df_sigma = res['prior_df'][['channel', 'attr_weight', 'sigma', 'confidence']].copy()
+            
+            # --- FIX: Start Index at 1 ---
+            df_sigma.index = range(1, len(df_sigma) + 1)
+            
             st.dataframe(
                 df_sigma.style.format({
                     'attr_weight': "{:.2%}",
@@ -196,29 +173,21 @@ if st.session_state.results:
             )
             
         st.divider()
-        
         col3, col4 = st.columns(2)
 
-        # 3. Markov Removal Effects
+        # 3. REMOVAL EFFECTS
         with col3:
             st.subheader("❌ Markov Removal Effects")
-            # Need to grab this from report logic or pipeline. 
-            # In main.py, markov_removal is a Series inside the pipeline but we didn't explicitly return it in 'res' dict 
-            # except implicitly via the images. 
-            # *Self-Correction*: The pipeline logic I gave you saved the PLOTS but didn't return the raw dataframe in 'res'. 
-            # However, 'prior_df' likely has everything we need or we can infer it. 
-            # Let's show the 'prior_df' again but focused on the removal logic if available, 
-            # OR better: use the 'top_paths' which IS available.
-            
-            # Since 'markov_removal' raw series wasn't in the return dict of the last main.py, 
-            # I will display the Attribution Weight (which is derived from it) as a proxy, 
-            # or we rely on the Forest Plot image below.
             st.image(str(res['img_paths']['removal']), use_container_width=True)
 
-        # 4. Shapley Top Paths
+        # 4. TOP PATHS TABLE
         with col4:
             st.subheader("🛣️ Top Shapley Conversion Paths")
             df_paths = res['top_paths'].head(10).copy()
+            
+            # --- FIX: Start Index at 1 ---
+            df_paths.index = range(1, len(df_paths) + 1)
+            
             st.dataframe(
                 df_paths[['path', 'conversions', 'share_of_conversions_pct']].style.format({
                     'share_of_conversions_pct': "{:.2f}%"
@@ -226,7 +195,7 @@ if st.session_state.results:
                 use_container_width=True
             )
 
-    # --- TAB 3: VISUAL JOURNEYS ---
+    # --- TAB 3: VISUALS ---
     with tab_viz:
         st.subheader("Customer Journey Flow (Sankey)")
         if os.path.exists(res['sankey_path']):

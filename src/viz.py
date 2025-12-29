@@ -334,5 +334,5 @@ def generate_sankey_pro(df_paths, journey_col="user_journey", min_threshold=0.00
         height=780
     )
 
-    fig.show()
+    #fig.show()
     return fig
