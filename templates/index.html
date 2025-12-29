@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Nexus Strategic Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .loader { border: 2px solid #f3f3f3; border-top: 2px solid #3b82f6; border-radius: 50%; width: 14px; height: 14px; animation: spin 1s linear infinite; display: inline-block; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-slate-50 p-8">
+    <div class="max-w-6xl mx-auto space-y-6">
+        <header class="flex justify-between items-center">
+            <h1 class="text-2xl font-bold">🚀 Nexus Strategy Engine</h1>
+            <div class="flex items-center gap-4">
+                <div id="status" class="text-xs font-medium text-slate-400">Ready</div>
+                <input type="file" id="files" multiple class="hidden" onchange="handleFiles(this.files)">
+                <button onclick="document.getElementById('files').click()" class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg">Upload & Process</button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-12 gap-6">
+            <div class="col-span-8 bg-white p-6 rounded-xl border border-slate-200">
+                <h2 class="text-xs font-bold text-slate-400 uppercase mb-4 tracking-widest">Strategic Action Plan</h2>
+                <table class="w-full text-sm text-left">
+                    <thead class="border-b text-slate-500 font-bold bg-slate-50">
+                        <tr>
+                            <th class="py-3 px-2">Channel</th>
+                            <th class="py-3 px-2">Attribution</th>
+                            <th class="py-3 px-2">ROI</th>
+                            <th class="py-3 px-2">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recTable" class="divide-y"></tbody>
+                </table>
+            </div>
+
+            <div class="col-span-4 bg-white p-4 rounded-xl border border-slate-200 flex flex-col h-[500px]">
+                <div class="font-bold border-b pb-2 mb-4">🤖 Assistant</div>
+                <div id="chatBox" class="flex-1 overflow-y-auto space-y-4 text-sm mb-4"></div>
+                <input type="text" id="userInput" placeholder="Ask Nexus..." onkeypress="if(event.key==='Enter') sendMessage()" class="w-full border p-2 rounded-lg">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let forestChartInstance = null;
+
+        async function handleFiles(files) {
+            if (files.length < 2) return alert("Select 2 files.");
+            const status = document.getElementById('status');
+            status.innerHTML = '<span class="loader"></span> Processing...';
+
+            const formData = new FormData();
+            formData.append('attribution_file', files[0]); 
+            formData.append('mmm_file', files[1]);
+            
+            const res = await fetch('/upload-data', { method: 'POST', body: formData });
+            if (res.ok) {
+                status.innerText = 'Analysis Complete';
+                loadDashboard();
+            }
+        }
+
+        async function loadDashboard() {
+            const res = await fetch('/get-executive-data');
+            const data = await res.json();
+            
+            const tbody = document.getElementById('recTable');
+            tbody.innerHTML = data.recommendations.map(r => `
+                <tr class="hover:bg-slate-50 transition">
+                    <td class="py-4 px-2 font-bold text-slate-700">${r.ch}</td>
+                    <td class="py-4 px-2 text-slate-500">${r.markov}</td>
+                    <td class="py-4 px-2 font-mono text-slate-500">${r.roi}</td>
+                    <td class="py-4 px-2 font-bold ${r.color}">${r.action}</td>
+                </tr>
+            `).join('');
+        }
+    </script>
+</body>
+</html>
