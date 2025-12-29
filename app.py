@@ -78,7 +78,8 @@ if process_btn:
     if not ga_file or not mmm_file:
         st.warning("⚠️ Please upload both GA and MMM files.")
     else:
-        with st.spinner("⏳ Nexus is processing data..."):
+        # --- REPLACED st.spinner WITH st.status ---
+        with st.status("🚀 Initializing Nexus Engine...", expanded=True) as status:
             try:
                 temp_dir = Path("temp_uploads")
                 output_dir = Path("output")
@@ -91,15 +92,32 @@ if process_btn:
                 with open(ga_path, "wb") as f: f.write(ga_file.getbuffer())
                 with open(mmm_path, "wb") as f: f.write(mmm_file.getbuffer())
                 
-                results = pipeline_main.run_analysis_pipeline(ga_path, mmm_path, output_dir)
+                # Define the callback function to update the UI
+                def ui_logger(message):
+                    st.write(message) # Adds a line to the status box
+                    status.update(label=message) # Updates the box title
+                
+                # Pass the logger to the pipeline
+                results = pipeline_main.run_analysis_pipeline(
+                    ga_path, 
+                    mmm_path, 
+                    output_dir, 
+                    status_callback=ui_logger # <--- PASSING CALLBACK HERE
+                )
+                
                 st.session_state.results = results
                 
                 if not st.session_state.messages:
                     st.session_state.messages = [
                         {"role": "assistant", "content": "Analysis complete. I have processed your Attribution, MMM, and Shapley values. What would you like to know?"}
                     ]
-                st.success("✅ Analysis Ready!")
+                
+                # Mark as complete and collapse
+                status.update(label="✅ Analysis Ready!", state="complete", expanded=False)
+                st.success("Analysis Pipeline Finished Successfully.")
+                
             except Exception as e:
+                status.update(label="❌ Pipeline Failed", state="error")
                 st.error(f"Pipeline Error: {e}")
 
 # --- TABS ---
