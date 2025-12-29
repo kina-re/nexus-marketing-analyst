@@ -4,7 +4,7 @@ from pathlib import Path
 import os
 import re
 from PIL import Image 
-from datetime import datetime  # <--- NEW IMPORT
+from datetime import datetime
 
 # --- PIPELINE IMPORTS ---
 from markov_shapley import (
@@ -23,13 +23,6 @@ import llm_analyst as nexus
 import viz_report
 import pdf_generator
 
-# --- CONFIG ---
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-GA_DATA_PATH = PROJECT_ROOT / "data" / "ga_2.csv"
-MMM_DATA_PATH = PROJECT_ROOT / "data" / "mmm_data_2016_2017.csv"
-OUTPUT_DIR = PROJECT_ROOT / "output"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
 def normalize_mmm_channels(df):
     mapping = {
         'Social_Media': 'social', 'Facebook_Ads': 'social',
@@ -41,9 +34,6 @@ def normalize_mmm_channels(df):
     return df.rename(columns=mapping)
 
 def parse_nexus_report(text):
-    """
-    Robust Parser: Splits by [HEADER] tags, ignoring case and formatting errors.
-    """
     sections = {
         'executive_summary': "Summary unavailable.",
         'q_matrix_insight': "Insight unavailable.",
@@ -51,18 +41,12 @@ def parse_nexus_report(text):
         'removal_insight': "Insight unavailable."
     }
     
-    # 1. Check for AI Failure
     if "⚠️" in text or "Error" in text[:50]:
-        print(f"⚠️ LLM Generation Failed: {text}")
         return sections
 
-    # 2. Normalize Text (Remove **bolding** around headers)
     clean_text = re.sub(r'\*\*\[(.*?)\]\*\*', r'[\1]', text) 
-    
-    # 3. Fuzzy Split
     tokens = re.split(r"\[([A-Z ]+)\]", clean_text, flags=re.IGNORECASE)
 
-    # 4. Map Sections
     header_map = {
         'EXECUTIVE SUMMARY': 'executive_summary',
         'Q MATRIX': 'q_matrix_insight',
@@ -73,18 +57,24 @@ def parse_nexus_report(text):
     for i in range(1, len(tokens)-1, 2):
         header = tokens[i].strip().upper()
         content = tokens[i+1].strip()
-        
         if header in header_map:
             sections[header_map[header]] = content
             
     return sections
 
-def run_analysis_pipeline():
+# --- UPDATED FUNCTION SIGNATURE TO ACCEPT PATHS ---
+def run_analysis_pipeline(ga_path, mmm_path, output_dir):
     print("⏳ Running Attribution Models...")
-    if not GA_DATA_PATH.exists() or not MMM_DATA_PATH.exists():
-        raise FileNotFoundError("Data files missing in 'data/' folder.")
+    
+    # Use the paths passed from Streamlit
+    ga_path = Path(ga_path)
+    mmm_path = Path(mmm_path)
+    output_dir = Path(output_dir)
+    
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
 
-    ga_df = pd.read_csv(GA_DATA_PATH, low_memory=False)
+    ga_df = pd.read_csv(ga_path, low_memory=False)
     
     # 1. MARKOV
     df_paths = create_user_journeys(ga_df)
@@ -97,16 +87,16 @@ def run_analysis_pipeline():
     # 2. GENERATE PDF CHARTS
     print("🎨 Generating Report Charts...")
     img_paths = {
-        'q_matrix': str(OUTPUT_DIR / "q_matrix.png"),
-        'r_matrix': str(OUTPUT_DIR / "r_matrix.png"),
-        'removal': str(OUTPUT_DIR / "removal_effects.png")
+        'q_matrix': str(output_dir / "q_matrix.png"),
+        'r_matrix': str(output_dir / "r_matrix.png"),
+        'removal': str(output_dir / "removal_effects.png")
     }
     viz_report.plot_q_matrix(Q, img_paths['q_matrix'])
     viz_report.plot_r_matrix(R, img_paths['r_matrix'])
     viz_report.plot_removal_effects(markov_removal, img_paths['removal'])
     
     if 'conversion' in R.columns:
-        img_paths['conv_probs'] = str(OUTPUT_DIR / "conv_probs.png")
+        img_paths['conv_probs'] = str(output_dir / "conv_probs.png")
         viz_report.plot_conversion_probs(R['conversion'], img_paths['conv_probs'])
 
     # 3. SHAPLEY & TOP PATHS
@@ -119,12 +109,17 @@ def run_analysis_pipeline():
     res = plot_prior_distributions(prior_df, show_plot=False)
     prior_df_with_sigma = res[1] if isinstance(res, tuple) else res
     
-    forest_path = OUTPUT_DIR / "attribution_forest_plot.png"
+    forest_path = output_dir / "attribution_forest_plot.png"
     Image.open(img_paths['removal']).save(forest_path) 
 
-    # 5. MMM MERGE
+    # 5. SANKEY DIAGRAM (Save to output_dir)
+    sankey_fig = generate_sankey_pro(df_paths)
+    sankey_path = output_dir / "customer_journey_sankey.html"
+    sankey_fig.write_html(str(sankey_path))
+
+    # 6. MMM MERGE
     prior_df_with_sigma['match_key'] = prior_df_with_sigma['channel'].apply(lambda x: x.lower().strip().replace(' ', '_'))
-    mmm_raw_df = pd.read_csv(MMM_DATA_PATH)
+    mmm_raw_df = pd.read_csv(mmm_path)
     mmm_df = normalize_mmm_channels(mmm_raw_df)
     if 'Date' in mmm_df.columns: mmm_df['Date'] = pd.to_datetime(mmm_df['Date'])
     mmm_df = mmm_df.T.groupby(level=0).sum().T
@@ -143,7 +138,7 @@ def run_analysis_pipeline():
         on='match_key', how='left'
     ).fillna(0)
 
-    # 6. LLM REPORT WRITING
+    # 7. LLM REPORT WRITING
     print("🧠 Nexus is writing the Executive Report...")
     
     full_prompt = f"""
@@ -164,80 +159,24 @@ def run_analysis_pipeline():
     
     [INSTRUCTIONS]
     Analyze the strategy. Identify "Optimization Opportunities" and "Critical Drivers".
-    
-    [IMPORTANT FORMATTING RULE]
-    You MUST separate your sections using EXACTLY these tags (brackets included):
-    [EXECUTIVE SUMMARY]
-    [Q MATRIX]
-    [R MATRIX]
-    [REMOVAL EFFECTS]
-    
-    [EXECUTIVE SUMMARY]
-    (3 bullet points comparing ROI vs Attribution)
-    
-    [Q MATRIX]
-    (Analyze user journey loops)
-    
-    [R MATRIX]
-    (Analyze conversion vs drop-off)
-    
-    [REMOVAL EFFECTS]
-    (Identify critical channels)
+    Use EXACTLY these tags: [EXECUTIVE SUMMARY], [Q MATRIX], [R MATRIX], [REMOVAL EFFECTS].
     """
 
     raw_report = nexus.chat_with_data(full_prompt, "")
-    
-    print(f"\n--- DEBUG: RAW AI OUTPUT ---\n{raw_report}\n----------------------------\n")
     report_data = parse_nexus_report(raw_report)
 
-    # 7. COMPILE PDF (With Timestamp Fix)
+    # 8. COMPILE PDF
     print("📄 Compiling PDF...")
-    
-    # --- FIX STARTS HERE ---
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     pdf_name = f"Nexus_Marketing_Report_{timestamp}.pdf"
-    # --- FIX ENDS HERE ---
-    
-    pdf_path = pdf_generator.generate_full_report(report_data, img_paths, str(OUTPUT_DIR / pdf_name))
+    pdf_path = pdf_generator.generate_full_report(report_data, img_paths, str(output_dir / pdf_name))
 
     return {
         "pdf_path": pdf_path,
         "prior_df": comparison_df,
         "top_paths": top_paths,
-        "img_paths": img_paths
+        "img_paths": img_paths,
+        "sankey_path": sankey_path,
+        "forest_path": forest_path,
+        "report_data": report_data # Return text data for dashboard display
     }
-
-def main():
-    try:
-        res = run_analysis_pipeline()
-        
-        print("\n" + "="*50)
-        print(f"✅ REPORT GENERATED: {res['pdf_path']}")
-        print("="*50)
-
-        print("\n🧠 NEXUS ONLINE. (I have analyzed the report data)")
-        print("Try asking: 'Explain the Q-Matrix findings' or 'Why is referral critical?'")
-        
-        context_str = res['prior_df'].to_string()
-        
-        while True:
-            user_input = input("\n👤 YOU: ").strip()
-            if user_input.lower() in ['exit', 'quit', 'q']:
-                break
-            if not user_input: continue
-            
-            image_to_send = None
-            if 'removal' in user_input.lower(): image_to_send = res['img_paths']['removal']
-            elif 'matrix' in user_input.lower(): image_to_send = res['img_paths']['q_matrix']
-
-            print("🤖 NEXUS: Thinking...", end="\r")
-            response = nexus.chat_with_data(user_input, context_str, image_to_send)
-            print(f"\r🤖 NEXUS: {response}")
-
-    except Exception as e:
-        print(f"Pipeline Error: {e}")
-        import traceback
-        traceback.print_exc()
-
-if __name__ == "__main__":
-    main()
