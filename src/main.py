@@ -37,25 +37,48 @@ def normalize_mmm_channels(df):
     return df.rename(columns=mapping)
 
 def parse_nexus_report(text):
+    """
+    Robust Parser: Uses strict delimiter splitting to guarantee sections are found.
+    """
+    # Default fallback content
     sections = {
         'executive_summary': "Summary unavailable.",
         'q_matrix_insight': "Insight unavailable.",
         'r_matrix_insight': "Insight unavailable.",
         'removal_insight': "Insight unavailable."
     }
-    if "⚠️" in text or "Error" in text[:50]: return sections
-    clean_text = re.sub(r'\*\*\[(.*?)\]\*\*', r'[\1]', text) 
-    tokens = re.split(r"\[([A-Z ]+)\]", clean_text, flags=re.IGNORECASE)
-    header_map = {
-        'EXECUTIVE SUMMARY': 'executive_summary',
-        'Q MATRIX': 'q_matrix_insight',
-        'R MATRIX': 'r_matrix_insight',
-        'REMOVAL EFFECTS': 'removal_insight'
+    
+    if not text or "Error" in text[:50]: 
+        return sections
+
+    # 1. Define the exact delimiters we used in the prompt
+    delimiters = {
+        'executive_summary': '===EXECUTIVE_SUMMARY===',
+        'q_matrix_insight': '===Q_MATRIX_INSIGHT===',
+        'r_matrix_insight': '===R_MATRIX_INSIGHT===',
+        'removal_insight': '===REMOVAL_INSIGHT==='
     }
-    for i in range(1, len(tokens)-1, 2):
-        header = tokens[i].strip().upper()
-        content = tokens[i+1].strip()
-        if header in header_map: sections[header_map[header]] = content
+
+    # 2. Iterate and extract text between delimiters
+    # We sort keys by position in text to extract sequentially if needed, 
+    # but simple string splitting is safest.
+    
+    for key, tag in delimiters.items():
+        if tag in text:
+            # Split the text by the tag, take the SECOND part (index 1)
+            # Then split by '===' to stop at the next tag
+            try:
+                # Example: "text... ===TAG=== The Content Next ===NEXT_TAG=== ..."
+                content = text.split(tag)[1].split('===')[0].strip()
+                
+                # Clean up any leftover Markdown artifacts
+                content = content.replace('**', '').replace('##', '').strip()
+                
+                if len(content) > 10:
+                    sections[key] = content
+            except IndexError:
+                continue
+
     return sections
 
 # --- UPDATED: Added status_callback parameter ---
@@ -143,17 +166,87 @@ def run_analysis_pipeline(ga_path, mmm_path, output_dir, status_callback=None):
         on='match_key', how='left'
     ).fillna(0)
 
+    # ---------------------------------------------------------
+    # 6.5 PREPARE REMOVAL DATA (The Missing Link)
+    # ---------------------------------------------------------
+    # 'markov_removal' was calculated in Step 1. 
+    # We convert it to a DataFrame so Step 7 can read it.
+    try:
+        removal_df = pd.DataFrame(list(markov_removal.items()), columns=['channel', 'removal_effect'])
+    except Exception as e:
+        log(f"⚠️ Error formatting removal effects: {e}")
+        removal_df = pd.DataFrame(columns=['channel', 'removal_effect'])
+
+    # ... inside run_analysis_pipeline ...
+
     # 7. LLM REPORT
     log("🧠 Nexus is analyzing strategy & writing report...")
+    
+    # --- PREPARE DATA FOR AI (Text Serialization) ---
+    
+    # A. Format R-Matrix (Conversion/Drops)
+    r_lines = []
+    if 'conversion' in R.columns:
+        R_sorted = R.sort_values('conversion', ascending=False)
+        for channel, row in R_sorted.iterrows():
+            conv = row.get('conversion', 0)
+            drop = row.get('dropped', 0)
+            r_lines.append(f"- {channel}: {conv:.1%} chance to Convert, {drop:.1%} chance to Drop off.")
+    r_text = "\n".join(r_lines)
+
+    # B. Format Q-Matrix (Transitions)
+    q_str = Q.round(3).to_string()
+
+    # C. Format Removal Effects (Strategic Value)
+    removal_lines = []
+    if 'removal_effect' in removal_df.columns:
+        # Sort by impact to highlight most important channels
+        rem_sorted = removal_df.sort_values('removal_effect', ascending=False)
+        for _, row in rem_sorted.iterrows():
+            # removal_effect is usually 0.0 to 1.0
+            val = row['removal_effect']
+            removal_lines.append(f"- {row['channel']}: {val:.1%} (This % of total conversions would be LOST if channel is removed)")
+    removal_text = "\n".join(removal_lines)
+    
+    # --- CONSTRUCT PROMPT ---
     full_prompt = f"""
     [ROLE] Senior Marketing Strategist. 
-    [DATA] {comparison_df.to_string()}
-    [INSTRUCTIONS] Identify optimization opportunities.
-    Use tags: [EXECUTIVE SUMMARY], [Q MATRIX], [R MATRIX], [REMOVAL EFFECTS].
+    
+    [DATA 1: ROI & ATTRIBUTION]
+    {comparison_df.to_string()}
+    
+    [DATA 2: CONVERSION PROBABILITIES (R-Matrix)]
+    {r_text}
+    
+    [DATA 3: JOURNEY TRANSITIONS (Q-Matrix)]
+    {q_str}
+
+    [DATA 4: REMOVAL EFFECTS (Strategic Value)]
+    (This measures the "Essentialness" of a channel. High % = Critical Channel.)
+    {removal_text}
+    
+    [TASK] Write a strategic marketing report.
+    
+    [IMPORTANT] You MUST use the exact delimiters below. Do not change them.
+    
+    ===EXECUTIVE_SUMMARY===
+    (Write a high-level summary of ROI, best channels, and overall performance.)
+    
+    ===Q_MATRIX_INSIGHT===
+    (Analyze the Q-Matrix. Which channels act as 'feeders' sending traffic to others?)
+    
+    ===R_MATRIX_INSIGHT===
+    (Analyze the R-Matrix. Which channels have the highest direct Conversion probability? Which have high Drop-off rates?)
+    
+    ===REMOVAL_INSIGHT===
+    (Analyze [DATA 4]. Which channels have the highest Removal Effect? These are your 'Load Bearing' channels. Compare this to their ROI.)
     """
+    
+    # Call AI
     raw_report = nexus.chat_with_data(full_prompt, "")
     report_data = parse_nexus_report(raw_report)
 
+   
     # 8. COMPILE PDF
     log("📄 Compiling PDF...")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
