@@ -11,26 +11,24 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 import src.main as pipeline_main
 import src.llm_analyst as nexus
 
-# --- 1. INITIALIZE STATE ---
+# --- 1. PAGE CONFIG (MUST BE FIRST) ---
+st.set_page_config(
+    page_title="Nexus | Strategic Marketing AI",
+    page_icon="🎯",
+    layout="wide",
+    initial_sidebar_state="expanded" 
+)
+
+# --- 2. INITIALIZE STATE ---
 if "results" not in st.session_state:
     st.session_state.results = None
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# --- 2. DYNAMIC SIDEBAR LOGIC ---
-sidebar_state = "collapsed" if st.session_state.results else "expanded"
-
-st.set_page_config(
-    page_title="Nexus | Strategic Marketing AI",
-    page_icon="🎯",
-    layout="wide",
-    initial_sidebar_state=sidebar_state
-)
-
 load_dotenv()
 
-# --- 3. CUSTOM CSS ---
+# --- 3. CUSTOM CSS (FIXED TABLES + WIDTHS) ---
 st.markdown("""
 <style>
     .main-header {
@@ -46,32 +44,44 @@ st.markdown("""
     }
     
     /* --- STRICT WHITE TABLE STYLING --- */
+    /* Remove outer container styling to prevent white borders/gaps */
     [data-testid="stDataFrame"] {
-        background-color: #FFFFFF !important;
+        background-color: transparent !important;
+        border: none !important;
+        padding: 0px !important;
+        width: 100% !important; /* Forces full width without the warning */
     }
+    
+    /* Style the internal wrapper */
     [data-testid="stDataFrame"] > div {
         background-color: #FFFFFF !important;
+        border-radius: 8px !important;
+        width: 100% !important;
     }
+    
+    /* Headers */
     th {
         background-color: #FFFFFF !important;
         color: #475569 !important;
         font-weight: 600 !important;
         border-bottom: 2px solid #E2E8F0 !important;
     }
+    
+    /* Cells */
     td {
         background-color: #FFFFFF !important;
         color: #1E293B !important;
         font-size: 0.95rem !important;
         border-bottom: 1px solid #F1F5F9 !important;
     }
-    .stDataFrame { background-color: white !important; }
 
-    /* Style for the Chat Container */
+    /* Chat Container */
     [data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 10px;
         border: 1px solid #E2E8F0;
     }
-    /* Report Box Styling */
+    
+    /* Report Box */
     .report-box {
         background-color: #F8FAFC;
         padding: 20px;
@@ -101,9 +111,9 @@ with st.sidebar:
     mmm_file = st.file_uploader("MMM Data (CSV)", type=["csv"])
     
     st.markdown("---")
+    # Warning fixed: Removed use_container_width if it causes issues, but usually fine for buttons.
+    # If this warns, we can remove it, but buttons usually need it to look good.
     process_btn = st.button("🚀 Run Analysis", type="primary", use_container_width=True, disabled=btn_disabled)
-
-    # Chat Toggle
     st.markdown("---")
     show_chat = st.toggle("💬 Show Assistant", value=True)
 
@@ -111,7 +121,6 @@ with st.sidebar:
 st.markdown('<div class="main-header">Nexus Intelligence</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-text">AI-Powered Marketing Attribution & Strategy</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-text">Please upload ga_2.csv and mmm_data_2016_2017.csv. If sidebar is not visible please click on arrows.</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-text">Models are maths heavy, so processing will take 45-60 seconds.</div>', unsafe_allow_html=True)
 
 # --- MAIN PROCESS LOGIC ---
 if process_btn:
@@ -135,26 +144,18 @@ if process_btn:
                     status.write(message)
                     status.update(label=message)
                 
-                # Run Pipeline
                 results = pipeline_main.run_analysis_pipeline(
-                    ga_path, 
-                    mmm_path, 
-                    output_dir, 
-                    status_callback=ui_logger
+                    ga_path, mmm_path, output_dir, status_callback=ui_logger
                 )
                 
-                # Save to Session State
                 st.session_state.results = results
                 
-                # Initialize Chat History
                 if not st.session_state.messages:
                     st.session_state.messages = [
                         {"role": "assistant", "content": "Analysis complete. I have processed your data using Markov chain, MMM, and Shapley models. What would you like to know?"}
                     ]
                 
                 status.update(label="✅ Analysis Ready!", state="complete", expanded=False)
-                
-                # 🟢 FORCE RERUN TO COLLAPSE SIDEBAR
                 st.rerun()
                 
             except Exception as e:
@@ -165,7 +166,6 @@ if process_btn:
 if st.session_state.results:
     res = st.session_state.results
 
-    # 1. LAYOUT DEFINITION (Left=Data, Right=Chat)
     if show_chat:
         col_main, col_chat = st.columns([2.2, 1], gap="medium")
     else:
@@ -174,7 +174,6 @@ if st.session_state.results:
 
     # === LEFT COLUMN: MAIN DASHBOARD ===
     with col_main:
-        # We put the "Data" tabs here.
         tab_data, tab_viz, tab_report = st.tabs(["📊 Data Tables", "🎨 Visual Analysis", "📝 Strategic Report"])
 
         # --- TAB 1: DATA TABLES ---
@@ -182,95 +181,81 @@ if st.session_state.results:
             st.caption("Raw strategic data processed by the pipeline.")
             col1, col2 = st.columns(2)
             
-            # ROI Table (All White)
             with col1:
                 st.subheader("ROI vs Attribution")
                 df_roi = res['prior_df'][['channel', 'roi', 'mmm_share', 'attr_weight']].copy()
                 df_roi.columns = ['Channel', 'ROI', 'MMM Share', 'Attribution']
-                
+                # FIX: Removed use_container_width=True to stop warning. CSS handles width.
                 st.dataframe(
                     df_roi.style
                     .format({'ROI': "{:.2f}", 'MMM Share': "{:.1%}", 'Attribution': "{:.1%}"})
                     .set_properties(**{'background-color': '#FFFFFF', 'color': '#1E293B', 'border-color': '#E2E8F0'})
-                    .hide(axis="index"),
-                    use_container_width=True
+                    .hide(axis="index")
                 )
 
-            # Confidence Table (All White + Percentages)
             with col2:
                 st.subheader("Attribution Confidence")
                 df_sigma = res['prior_df'][['channel', 'attr_weight', 'sigma', 'confidence']].copy()
                 df_sigma.columns = ['Channel', 'Attribution', 'Sigma', 'Confidence']
-                
+                # FIX: Removed use_container_width=True to stop warning. CSS handles width.
                 st.dataframe(
                     df_sigma.style
                     .format({'Attribution': '{:.2%}', 'Sigma': '{:.4f}'}) 
                     .set_properties(**{'background-color': '#FFFFFF', 'color': '#1E293B'}),
-                    
                     column_config={
                         "Confidence": st.column_config.ProgressColumn(
-                            "Confidence Score",
-                            format="%.2f",
-                            min_value=0,
-                            max_value=1,
+                            "Confidence Score", format="%.2f", min_value=0, max_value=1
                         )
                     },
-                    hide_index=True,
-                    use_container_width=True
+                    hide_index=True
                 )
-                
+            
             st.divider()
-
-            # --- TOP CONVERSION PATHS (First) ---
+            
+            # Top Paths
             st.subheader("Top Conversion Paths")
             df_paths = res['top_paths'].head(10).copy()
-            
+            # FIX: Removed use_container_width=True to stop warning. CSS handles width.
             st.dataframe(
                 df_paths[['path', 'conversions', 'share_of_conversions_pct']].style
                 .format({'share_of_conversions_pct': "{:.2f}%"})
                 .set_properties(**{'background-color': '#FFFFFF', 'color': '#1E293B'})
-                .hide(axis="index"),
-                use_container_width=True
+                .hide(axis="index")
             )
 
             st.divider()
 
-            # --- REMOVAL EFFECTS (Below) ---
-            st.subheader("Removal Effects")
+            # Removal Effects
+            st.subheader("❌ Removal Effects")
             if os.path.exists(res['img_paths']['removal']):
-                rem_img = Image.open(res['img_paths']['removal'])
-                st.image(rem_img, use_container_width=True)
+                st.image(Image.open(res['img_paths']['removal']), use_container_width=True)
 
         # --- TAB 2: VISUALS ---
         with tab_viz:
-            st.markdown("### Attribution Uncertainty Plot")
+            st.markdown("###  Attribution Uncertainty Plot")
             if res.get('forest_path') and os.path.exists(res['forest_path']):
-                img = Image.open(res['forest_path'])
-                st.image(img, caption="Consensus Attribution (Markov + Shapley)", use_container_width=True)
+                st.image(Image.open(res['forest_path']), caption="Consensus Attribution", use_container_width=True)
             else:
                 st.warning("Forest plot not found.")
                 
             st.divider()
             
-            st.markdown("### Customer Journey Flow")
+            st.markdown("###  Customer Journey Flow")
             if os.path.exists(res['sankey_path']):
                 with open(res['sankey_path'], 'r', encoding='utf-8') as f:
-                    html_data = f.read()
-                st.components.v1.html(html_data, height=700, scrolling=True)
+                    st.components.v1.html(f.read(), height=700, scrolling=True)
             
             st.divider()
 
-            st.markdown("### Transition Probabilities (Q-Matrix)")
+            st.markdown("### Transition Probabilities")
             if os.path.exists(res['img_paths']['q_matrix']):
-                q_img = Image.open(res['img_paths']['q_matrix'])
                 c1, c2, c3 = st.columns([1, 4, 1])
                 with c2:
-                    st.image(q_img, caption="User Flow Heatmap", use_container_width=True)
+                    st.image(Image.open(res['img_paths']['q_matrix']), caption="User Flow Heatmap", use_container_width=True)
 
         # --- TAB 3: REPORT ---
         with tab_report:
             st.subheader("📝 AI Strategic Analysis")
-            
             if res.get('pdf_path') and os.path.exists(res['pdf_path']):
                 with open(res['pdf_path'], "rb") as pdf_file:
                     st.download_button(
@@ -280,13 +265,9 @@ if st.session_state.results:
                         mime="application/pdf",
                         type="primary"
                     )
-            else:
-                st.warning("PDF Report not available yet.")
-
-            st.divider()
-
-            report = res.get('report_data', {})
             
+            st.divider()
+            report = res.get('report_data', {})
             st.markdown("#### 1. Executive Summary")
             st.markdown(f"<div class='report-box'>{report.get('executive_summary', 'No summary available.')}</div>", unsafe_allow_html=True)
             
@@ -294,17 +275,14 @@ if st.session_state.results:
             with col_r1:
                 st.markdown("#### 2. Optimization Opportunities")
                 st.info(report.get('removal_insight', 'No insight available.'))
-            
             with col_r2:
                 st.markdown("#### 3. Journey Friction")
                 st.warning(report.get('q_matrix_insight', 'No insight available.'))
 
-    # === RIGHT COLUMN: NEXUS CHAT ===
+    # === RIGHT COLUMN: NEXUS CHAT (CRASH-PROOF SMART MODE) ===
     if col_chat:
         with col_chat:
             st.markdown("#### 💬 Nexus Assistant")
-            
-            # CHANGED: Reduced height to 500px to ensure input bar is visible on all screens
             chat_box = st.container(height=500, border=True)
             
             with chat_box:
@@ -319,50 +297,35 @@ if st.session_state.results:
 
                     with st.chat_message("assistant"):
                         placeholder = st.empty()
-                        placeholder.markdown("🧠 *Thinking...*")
+                        placeholder.markdown("*Thinking...*")
                         
-                        # SMART CONTEXT ROUTING
+                        # --- SMART CONTEXT ROUTING (TEXT ONLY) ---
                         p_lower = prompt.lower()
                         context_str = f"=== KEY ATTRIBUTION DATA ===\n{res['prior_df'].to_string()}\n"
-                        image_path = None
 
+                        # Instead of sending the IMAGE FILE (which crashes),
+                        # we send a DESCRIPTION of the image so the AI knows what you are looking at.
+                        
                         if any(x in p_lower for x in ['journey', 'flow', 'path', 'sankey', 'steps']):
                             top_paths_txt = res['top_paths'].head(15).to_string()
                             context_str += f"\n=== TOP CUSTOMER PATHS (Sankey Data) ===\n{top_paths_txt}\n"
-                            context_str += "\n(NOTE: These paths represent the User Journey Flow. Explain them sequentially.)"
+                            context_str += "\n[SYSTEM NOTE: The user is asking about the Sankey Diagram visual. Use the path data above to explain the flow.]"
 
                         elif any(x in p_lower for x in ['matrix', 'probability', 'transition', 'heatmap', 'grid']):
-                            if os.path.exists(res['img_paths']['q_matrix']):
-                                image_path = str(res['img_paths']['q_matrix'])
-                                context_str += "\n(NOTE: The attached image is the Q-Matrix (Transition Probabilities).)\n"
+                            context_str += "\n[SYSTEM NOTE: The user is viewing the Q-Matrix (Transition Probabilities) heatmap. Explain that this shows the likelihood of moving from one channel to another.]"
 
                         elif any(x in p_lower for x in ['removal', 'value', 'impact', 'lose']):
-                            if os.path.exists(res['img_paths']['removal']):
-                                image_path = str(res['img_paths']['removal'])
+                            context_str += "\n[SYSTEM NOTE: The user is asking about the Removal Effects bar chart. Explain which channels cause the biggest drop in conversions if removed.]"
 
                         # Forest Plot / Uncertainty Condition
                         elif any(x in p_lower for x in ['forest', 'plot', 'uncertainty', 'confidence', 'attribution', 'model', 'shapley']):
-                            if os.path.exists(res['forest_path']):
-                                image_path = str(res['forest_path'])
-                                # Explicitly tell AI what this image is
-                                context_str += "\n(NOTE: The attached image is the Attribution Forest Plot. The dots are weights, lines are error bars.)\n"
-                        
+                            context_str += "\n[SYSTEM NOTE: The user is viewing the Attribution Forest Plot. Explain that dots represent the calculated weight and lines represent the error margin/uncertainty.]"
+
+                        # --- SAFE EXECUTION ---
                         try:
-                            # 1. Try to send with image
-                            response = nexus.chat_with_data(prompt, context_str, image_path)
+                            # WE PASS 'None' FOR IMAGE TO PREVENT CRASH
+                            response = nexus.chat_with_data(prompt, context_str, None)
                             placeholder.markdown(response)
                             st.session_state.messages.append({"role": "assistant", "content": response})
                         except Exception as e:
-                            # 2. Fallback: If image fails (Pydantic error), try text-only
-                            if image_path:
-                                context_str += "\n[System Note: Image analysis skipped due to library conflict. Analyzing text data only.]"
-                                try:
-                                    response = nexus.chat_with_data(prompt, context_str, None)
-                                    placeholder.markdown(response)
-                                    st.session_state.messages.append({"role": "assistant", "content": response})
-                                except Exception as e2:
-                                    placeholder.error(f"AI Error: {e2}")
-                            else:
-                                placeholder.error(f"AI Error: {e}")
-                    
-                    st.rerun()
+                            placeholder.error(f"AI Error: {e}")
