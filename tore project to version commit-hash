@@ -1,0 +1,20 @@
+* [33m4295e07[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m Final UI changes
+* [33m7fb1e43[m Fix: Added Streamlit config to resolve path errors
+* [33m8825602[m Delete output directory
+* [33mb14901a[m Final Polish: Fixed layout, white tables, and image error handling
+* [33mec89947[m Upgrade Python to 3.10
+* [33m8669a99[m Add deployment config
+* [33m24a80b5[m mvp v1.0, ready for deployment
+* [33m540b7a2[m display ongoing processes to user
+* [33m478012c[m final v2.0 - all works well except chat and process log
+* [33m44b92e7[m no graph pop up version
+* [33m89f9021[m accepts csv from user, frontend : removed summary , added tables
+* [33m837daab[m final version with pdf
+* [33m2496498[m Basic backend works well with all outputs and basic ai layer
+* [33m8878952[m markov shapley paths, metrics
+* [33m58577ae[m final mmm with seasonality and correct roi
+* [33m9842f63[m Add seasonality through fourier transform
+* [33maec46f6[m Add correct mmm and roi
+* [33mf9cf207[m Implement revenue MMM regression with adstock, Hill saturation, and leakage-safe inputs
+* [33mede9fc2[m Adds MMM transforms: geometric adstock and Hill saturation
+* [33m261afff[m Initial commit: markoc and shapley for mmm

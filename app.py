@@ -49,7 +49,7 @@ st.markdown("""
         background-color: transparent !important;
         border: none !important;
         padding: 0px !important;
-        width: 100% !important; /* Forces full width without the warning */
+        width: 100% !important;
     }
     
     /* Style the internal wrapper */
@@ -111,8 +111,6 @@ with st.sidebar:
     mmm_file = st.file_uploader("MMM Data (CSV)", type=["csv"])
     
     st.markdown("---")
-    # Warning fixed: Removed use_container_width if it causes issues, but usually fine for buttons.
-    # If this warns, we can remove it, but buttons usually need it to look good.
     process_btn = st.button("🚀 Run Analysis", type="primary", use_container_width=True, disabled=btn_disabled)
     st.markdown("---")
     show_chat = st.toggle("💬 Show Assistant", value=True)
@@ -185,19 +183,21 @@ if st.session_state.results:
                 st.subheader("ROI vs Attribution")
                 df_roi = res['prior_df'][['channel', 'roi', 'mmm_share', 'attr_weight']].copy()
                 df_roi.columns = ['Channel', 'ROI', 'MMM Share', 'Attribution']
-                # FIX: Removed use_container_width=True to stop warning. CSS handles width.
+                
+                # --- FIX APPLIED HERE ---
+                # Added 'hide_index=True' explicitly to st.dataframe
                 st.dataframe(
                     df_roi.style
                     .format({'ROI': "{:.2f}", 'MMM Share': "{:.1%}", 'Attribution': "{:.1%}"})
-                    .set_properties(**{'background-color': '#FFFFFF', 'color': '#1E293B', 'border-color': '#E2E8F0'})
-                    .hide(axis="index")
+                    .set_properties(**{'background-color': '#FFFFFF', 'color': '#1E293B', 'border-color': '#E2E8F0'}),
+                    hide_index=True
                 )
 
             with col2:
                 st.subheader("Attribution Confidence")
                 df_sigma = res['prior_df'][['channel', 'attr_weight', 'sigma', 'confidence']].copy()
                 df_sigma.columns = ['Channel', 'Attribution', 'Sigma', 'Confidence']
-                # FIX: Removed use_container_width=True to stop warning. CSS handles width.
+                
                 st.dataframe(
                     df_sigma.style
                     .format({'Attribution': '{:.2%}', 'Sigma': '{:.4f}'}) 
@@ -215,18 +215,20 @@ if st.session_state.results:
             # Top Paths
             st.subheader("Top Conversion Paths")
             df_paths = res['top_paths'].head(10).copy()
-            # FIX: Removed use_container_width=True to stop warning. CSS handles width.
+            
+            # --- FIX APPLIED HERE ---
+            # Added 'hide_index=True' explicitly to st.dataframe
             st.dataframe(
                 df_paths[['path', 'conversions', 'share_of_conversions_pct']].style
                 .format({'share_of_conversions_pct': "{:.2f}%"})
-                .set_properties(**{'background-color': '#FFFFFF', 'color': '#1E293B'})
-                .hide(axis="index")
+                .set_properties(**{'background-color': '#FFFFFF', 'color': '#1E293B'}),
+                hide_index=True
             )
 
             st.divider()
 
             # Removal Effects
-            st.subheader("❌ Removal Effects")
+            st.subheader("Removal Effects")
             if os.path.exists(res['img_paths']['removal']):
                 st.image(Image.open(res['img_paths']['removal']), use_container_width=True)
 
@@ -297,15 +299,12 @@ if st.session_state.results:
 
                     with st.chat_message("assistant"):
                         placeholder = st.empty()
-                        placeholder.markdown("*Thinking...*")
+                        placeholder.markdown("🧠 *Thinking...*")
                         
                         # --- SMART CONTEXT ROUTING (TEXT ONLY) ---
                         p_lower = prompt.lower()
                         context_str = f"=== KEY ATTRIBUTION DATA ===\n{res['prior_df'].to_string()}\n"
 
-                        # Instead of sending the IMAGE FILE (which crashes),
-                        # we send a DESCRIPTION of the image so the AI knows what you are looking at.
-                        
                         if any(x in p_lower for x in ['journey', 'flow', 'path', 'sankey', 'steps']):
                             top_paths_txt = res['top_paths'].head(15).to_string()
                             context_str += f"\n=== TOP CUSTOMER PATHS (Sankey Data) ===\n{top_paths_txt}\n"
@@ -317,11 +316,9 @@ if st.session_state.results:
                         elif any(x in p_lower for x in ['removal', 'value', 'impact', 'lose']):
                             context_str += "\n[SYSTEM NOTE: The user is asking about the Removal Effects bar chart. Explain which channels cause the biggest drop in conversions if removed.]"
 
-                        # Forest Plot / Uncertainty Condition
                         elif any(x in p_lower for x in ['forest', 'plot', 'uncertainty', 'confidence', 'attribution', 'model', 'shapley']):
                             context_str += "\n[SYSTEM NOTE: The user is viewing the Attribution Forest Plot. Explain that dots represent the calculated weight and lines represent the error margin/uncertainty.]"
 
-                        # --- SAFE EXECUTION ---
                         try:
                             # WE PASS 'None' FOR IMAGE TO PREVENT CRASH
                             response = nexus.chat_with_data(prompt, context_str, None)
