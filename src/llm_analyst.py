@@ -1,7 +1,6 @@
 import os
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
+from google.genai import Client, types
 from PIL import Image
 
 load_dotenv()
@@ -13,7 +12,7 @@ API_KEY = os.getenv("GEMINI_API_KEY")
 def get_client():
     if not API_KEY:
         raise ValueError("❌ GEMINI_API_KEY not found. Check your .env file.")
-    return genai.Client(api_key=API_KEY)
+    return Client(api_key=API_KEY)
 
 def chat_with_data(user_question, internal_context, image_path=None):
     client = get_client()
