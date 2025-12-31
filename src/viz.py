@@ -170,7 +170,7 @@ def plot_removal_effects(effects_series, title="Removal Effects on Conversion Pr
         title (str): Title for the plot.
     """
     plt.figure(figsize=(10, 6))
-    sns.barplot(x=effects_series.values, y=effects_series.index, palette="viridis")
+    sns.barplot(x=effects_series.values, y=effects_series.index, palette="PuBu")
     plt.title(title, fontsize=14)
     plt.xlabel("Removal Effect (pp)")
     plt.ylabel("Channel")

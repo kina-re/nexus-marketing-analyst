@@ -11,7 +11,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 import src.main as pipeline_main
 import src.llm_analyst as nexus
 
-# --- 1. INITIALIZE STATE (Must be before set_page_config) ---
+# --- 1. INITIALIZE STATE ---
 if "results" not in st.session_state:
     st.session_state.results = None
 
@@ -19,19 +19,18 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 # --- 2. DYNAMIC SIDEBAR LOGIC ---
-# If results exist, we force the sidebar to collapse. Otherwise, it stays open.
 sidebar_state = "collapsed" if st.session_state.results else "expanded"
 
 st.set_page_config(
     page_title="Nexus | Strategic Marketing AI",
     page_icon="🧠",
     layout="wide",
-    initial_sidebar_state=sidebar_state # <--- THIS IS THE FIX
+    initial_sidebar_state=sidebar_state
 )
 
 load_dotenv()
 
-# --- CUSTOM CSS ---
+# --- 3. CUSTOM CSS ---
 st.markdown("""
 <style>
     .main-header {
@@ -45,11 +44,28 @@ st.markdown("""
         color: #64748B;
         margin-bottom: 20px;
     }
-    th {
-        background-color: #F8FAFC !important;
-        color: #334155 !important;
-        font-weight: 600 !important;
+    
+    /* --- STRICT WHITE TABLE STYLING --- */
+    [data-testid="stDataFrame"] {
+        background-color: #FFFFFF !important;
     }
+    [data-testid="stDataFrame"] > div {
+        background-color: #FFFFFF !important;
+    }
+    th {
+        background-color: #FFFFFF !important;
+        color: #475569 !important;
+        font-weight: 600 !important;
+        border-bottom: 2px solid #E2E8F0 !important;
+    }
+    td {
+        background-color: #FFFFFF !important;
+        color: #1E293B !important;
+        font-size: 0.95rem !important;
+        border-bottom: 1px solid #F1F5F9 !important;
+    }
+    .stDataFrame { background-color: white !important; }
+
     /* Style for the Chat Container */
     [data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 10px;
@@ -92,7 +108,7 @@ with st.sidebar:
     show_chat = st.toggle("💬 Show Assistant", value=True)
 
 # --- HEADER ---
-st.markdown('<div class="main-header">🧠 Nexus Intelligence</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">Nexus Intelligence</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-text">AI-Powered Marketing Attribution & Strategy</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-text">Please upload ga_2.csv and mmm_data_2016_2017.csv. If sidebar is not visible please click on arrows.</div>', unsafe_allow_html=True)
 
@@ -101,7 +117,6 @@ if process_btn:
     if not ga_file or not mmm_file:
         st.warning("⚠️ Please upload both GA and MMM files.")
     else:
-        # Start Status Box
         with st.status("🚀 Initializing Nexus Engine...", expanded=True) as status:
             try:
                 temp_dir = Path("temp_uploads")
@@ -149,74 +164,16 @@ if process_btn:
 if st.session_state.results:
     res = st.session_state.results
 
-    # 1. LAYOUT DEFINITION (Left=Chat, Right=Data)
+    # 1. LAYOUT DEFINITION (Left=Data, Right=Chat)
     if show_chat:
-        # Chat gets 33%, Data gets 67% (Broader chat as requested)
-        col_chat, col_main = st.columns([1, 2], gap="small")
+        col_main, col_chat = st.columns([2.2, 1], gap="medium")
     else:
-        # Chat hidden, Data takes full width
-        col_chat = None 
         col_main = st.container()
+        col_chat = None
 
-    # === LEFT COLUMN: NEXUS CHAT ===
-    if col_chat:
-        with col_chat:
-            st.markdown("#### 💬 Nexus Assistant")
-            chat_box = st.container(height=800, border=True)
-            
-            with chat_box:
-                for message in st.session_state.messages:
-                    with st.chat_message(message["role"]):
-                        st.markdown(message["content"])
-
-                if prompt := st.chat_input("Ask Nexus..."):
-                    st.session_state.messages.append({"role": "user", "content": prompt})
-                    with st.chat_message("user"):
-                        st.markdown(prompt)
-
-                    with st.chat_message("assistant"):
-                        placeholder = st.empty()
-                        placeholder.markdown("🧠 *Thinking...*")
-                        
-                        # SMART CONTEXT ROUTING
-                        p_lower = prompt.lower()
-                        context_str = f"=== KEY ATTRIBUTION DATA ===\n{res['prior_df'].to_string()}\n"
-                        image_path = None
-
-                        if any(x in p_lower for x in ['journey', 'flow', 'path', 'sankey', 'steps']):
-                            top_paths_txt = res['top_paths'].head(15).to_string()
-                            context_str += f"\n=== TOP CUSTOMER PATHS (Sankey Data) ===\n{top_paths_txt}\n"
-                            context_str += "\n(NOTE: These paths represent the User Journey Flow. Explain them sequentially.)"
-
-                        elif any(x in p_lower for x in ['matrix', 'probability', 'transition', 'heatmap', 'grid']):
-                            if os.path.exists(res['img_paths']['q_matrix']):
-                                image_path = str(res['img_paths']['q_matrix'])
-                                context_str += "\n(NOTE: The attached image is the Q-Matrix (Transition Probabilities).)\n"
-
-                        elif any(x in p_lower for x in ['forest', 'uncertainty', 'confidence', 'attribution', 'model', 'shapley']):
-                            if os.path.exists(res['forest_path']):
-                                image_path = str(res['forest_path'])
-
-                        elif any(x in p_lower for x in ['removal', 'value', 'impact', 'lose']):
-                            if os.path.exists(res['img_paths']['removal']):
-                                image_path = str(res['img_paths']['removal'])
-
-                        # Added 'plot' and 'chart' to catch "forest plot" requests
-                        elif any(x in p_lower for x in ['forest', 'plot', 'uncertainty', 'confidence', 'attribution', 'model', 'shapley']):
-                            if os.path.exists(res['forest_path']):
-                                image_path = str(res['forest_path'])
-                                # Explicitly tell AI what this image is
-                                context_str += "\n(NOTE: The attached image is the Attribution Forest Plot. The dots are weights, lines are error bars.)\n"
-                        
-                        response = nexus.chat_with_data(prompt, context_str, image_path)
-                        placeholder.markdown(response)
-                    
-                    st.session_state.messages.append({"role": "assistant", "content": response})
-                    st.rerun()
-
-    # === RIGHT COLUMN: MAIN CONTENT ===
+    # === LEFT COLUMN: MAIN DASHBOARD ===
     with col_main:
-        # We put the "Data" tabs here. This effectively replaces the sidebar "Data" area.
+        # We put the "Data" tabs here.
         tab_data, tab_viz, tab_report = st.tabs(["📊 Data Tables", "🎨 Visual Analysis", "📝 Strategic Report"])
 
         # --- TAB 1: DATA TABLES ---
@@ -224,53 +181,64 @@ if st.session_state.results:
             st.caption("Raw strategic data processed by the pipeline.")
             col1, col2 = st.columns(2)
             
-            # ROI
+            # ROI Table (All White)
             with col1:
                 st.subheader("💰 ROI vs Attribution")
                 df_roi = res['prior_df'][['channel', 'roi', 'mmm_share', 'attr_weight']].copy()
-                df_roi.index = range(1, len(df_roi) + 1)
+                df_roi.columns = ['Channel', 'ROI', 'MMM Share', 'Attribution']
+                
                 st.dataframe(
-                    df_roi.style.format({
-                        'roi': "{:.2f}",
-                        'mmm_share': "{:.2%}",
-                        'attr_weight': "{:.2%}"
-                    }).background_gradient(subset=['roi'], cmap="Greens"),
+                    df_roi.style
+                    .format({'ROI': "{:.2f}", 'MMM Share': "{:.1%}", 'Attribution': "{:.1%}"})
+                    .set_properties(**{'background-color': '#FFFFFF', 'color': '#1E293B', 'border-color': '#E2E8F0'})
+                    .hide(axis="index"),
                     use_container_width=True
                 )
 
-            # SIGMA
+            # Confidence Table (All White + Percentages)
             with col2:
                 st.subheader("📉 Attribution Confidence")
                 df_sigma = res['prior_df'][['channel', 'attr_weight', 'sigma', 'confidence']].copy()
-                df_sigma.index = range(1, len(df_sigma) + 1)
+                df_sigma.columns = ['Channel', 'Attribution', 'Sigma', 'Confidence']
+                
                 st.dataframe(
-                    df_sigma.style.format({
-                        'attr_weight': "{:.2%}",
-                        'sigma': "{:.4f}",
-                        'confidence': "{:.2f}"
-                    }).bar(subset=['confidence'], color='#3B82F6'),
+                    df_sigma.style
+                    .format({'Attribution': '{:.2%}', 'Sigma': '{:.4f}'}) 
+                    .set_properties(**{'background-color': '#FFFFFF', 'color': '#1E293B'}),
+                    
+                    column_config={
+                        "Confidence": st.column_config.ProgressColumn(
+                            "Confidence Score",
+                            format="%.2f",
+                            min_value=0,
+                            max_value=1,
+                        )
+                    },
+                    hide_index=True,
                     use_container_width=True
                 )
                 
             st.divider()
-            col3, col4 = st.columns(2)
 
-            with col3:
-                st.subheader("❌ Removal Effects")
-                if os.path.exists(res['img_paths']['removal']):
-                    rem_img = Image.open(res['img_paths']['removal'])
-                    st.image(rem_img, use_container_width=True)
+            # --- TOP CONVERSION PATHS (First) ---
+            st.subheader("🛣️ Top Conversion Paths")
+            df_paths = res['top_paths'].head(10).copy()
+            
+            st.dataframe(
+                df_paths[['path', 'conversions', 'share_of_conversions_pct']].style
+                .format({'share_of_conversions_pct': "{:.2f}%"})
+                .set_properties(**{'background-color': '#FFFFFF', 'color': '#1E293B'})
+                .hide(axis="index"),
+                use_container_width=True
+            )
 
-            with col4:
-                st.subheader("🛣️ Top Conversion Paths")
-                df_paths = res['top_paths'].head(10).copy()
-                df_paths.index = range(1, len(df_paths) + 1)
-                st.dataframe(
-                    df_paths[['path', 'conversions', 'share_of_conversions_pct']].style.format({
-                        'share_of_conversions_pct': "{:.2f}%"
-                    }),
-                    use_container_width=True
-                )
+            st.divider()
+
+            # --- REMOVAL EFFECTS (Below) ---
+            st.subheader("❌ Removal Effects")
+            if os.path.exists(res['img_paths']['removal']):
+                rem_img = Image.open(res['img_paths']['removal'])
+                st.image(rem_img, use_container_width=True)
 
         # --- TAB 2: VISUALS ---
         with tab_viz:
@@ -329,3 +297,71 @@ if st.session_state.results:
             with col_r2:
                 st.markdown("#### 3. Journey Friction")
                 st.warning(report.get('q_matrix_insight', 'No insight available.'))
+
+    # === RIGHT COLUMN: NEXUS CHAT ===
+    if col_chat:
+        with col_chat:
+            st.markdown("#### 💬 Nexus Assistant")
+            
+            # CHANGED: Reduced height to 500px to ensure input bar is visible on all screens
+            chat_box = st.container(height=500, border=True)
+            
+            with chat_box:
+                for message in st.session_state.messages:
+                    with st.chat_message(message["role"]):
+                        st.markdown(message["content"])
+
+                if prompt := st.chat_input("Ask Nexus..."):
+                    st.session_state.messages.append({"role": "user", "content": prompt})
+                    with st.chat_message("user"):
+                        st.markdown(prompt)
+
+                    with st.chat_message("assistant"):
+                        placeholder = st.empty()
+                        placeholder.markdown("🧠 *Thinking...*")
+                        
+                        # SMART CONTEXT ROUTING
+                        p_lower = prompt.lower()
+                        context_str = f"=== KEY ATTRIBUTION DATA ===\n{res['prior_df'].to_string()}\n"
+                        image_path = None
+
+                        if any(x in p_lower for x in ['journey', 'flow', 'path', 'sankey', 'steps']):
+                            top_paths_txt = res['top_paths'].head(15).to_string()
+                            context_str += f"\n=== TOP CUSTOMER PATHS (Sankey Data) ===\n{top_paths_txt}\n"
+                            context_str += "\n(NOTE: These paths represent the User Journey Flow. Explain them sequentially.)"
+
+                        elif any(x in p_lower for x in ['matrix', 'probability', 'transition', 'heatmap', 'grid']):
+                            if os.path.exists(res['img_paths']['q_matrix']):
+                                image_path = str(res['img_paths']['q_matrix'])
+                                context_str += "\n(NOTE: The attached image is the Q-Matrix (Transition Probabilities).)\n"
+
+                        elif any(x in p_lower for x in ['removal', 'value', 'impact', 'lose']):
+                            if os.path.exists(res['img_paths']['removal']):
+                                image_path = str(res['img_paths']['removal'])
+
+                        # Forest Plot / Uncertainty Condition
+                        elif any(x in p_lower for x in ['forest', 'plot', 'uncertainty', 'confidence', 'attribution', 'model', 'shapley']):
+                            if os.path.exists(res['forest_path']):
+                                image_path = str(res['forest_path'])
+                                # Explicitly tell AI what this image is
+                                context_str += "\n(NOTE: The attached image is the Attribution Forest Plot. The dots are weights, lines are error bars.)\n"
+                        
+                        try:
+                            # 1. Try to send with image
+                            response = nexus.chat_with_data(prompt, context_str, image_path)
+                            placeholder.markdown(response)
+                            st.session_state.messages.append({"role": "assistant", "content": response})
+                        except Exception as e:
+                            # 2. Fallback: If image fails (Pydantic error), try text-only
+                            if image_path:
+                                context_str += "\n[System Note: Image analysis skipped due to library conflict. Analyzing text data only.]"
+                                try:
+                                    response = nexus.chat_with_data(prompt, context_str, None)
+                                    placeholder.markdown(response)
+                                    st.session_state.messages.append({"role": "assistant", "content": response})
+                                except Exception as e2:
+                                    placeholder.error(f"AI Error: {e2}")
+                            else:
+                                placeholder.error(f"AI Error: {e}")
+                    
+                    st.rerun()
