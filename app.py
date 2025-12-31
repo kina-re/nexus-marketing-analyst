@@ -205,43 +205,39 @@ if st.session_state.results:
     if col_chat:
         with col_chat:
             st.markdown("#### 💬 Nexus Assistant")
-            chat_box = st.container(height=500, border=True)
             
-            with chat_box:
+            # 1. Define the scrollable box with a fixed height
+            chat_container = st.container(height=500, border=True)
+            
+            # 2. Render existing messages INSIDE the container
+            with chat_container:
                 for message in st.session_state.messages:
                     with st.chat_message(message["role"]):
                         st.markdown(message["content"])
 
+            # 3. Handle new input
             if prompt := st.chat_input("Ask Nexus..."):
+                # Append user message to state
                 st.session_state.messages.append({"role": "user", "content": prompt})
-                with st.chat_message("user"):
-                    st.markdown(prompt)
+                
+                # Immediately display user message in the container
+                with chat_container:
+                    with st.chat_message("user"):
+                        st.markdown(prompt)
 
-                with st.chat_message("assistant"):
-                    placeholder = st.empty()
-                    placeholder.markdown("*Thinking...*")
-                    
-                    # --- SMART CONTEXT ROUTING ---
-                    p_lower = prompt.lower()
-                    context_str = f"=== KEY ATTRIBUTION DATA ===\n{res['prior_df'].to_string()}\n"
+                    # Assistant thinking logic
+                    with st.chat_message("assistant"):
+                        placeholder = st.empty()
+                        placeholder.markdown("🧠 *Thinking...*")
+                        
+                        # --- SMART CONTEXT ROUTING ---
+                        p_lower = prompt.lower()
+                        context_str = f"=== KEY ATTRIBUTION DATA ===\n{res['prior_df'].to_string()}\n"
+                        # ... [keep your existing context routing logic here] ...
 
-                    if any(x in p_lower for x in ['journey', 'flow', 'path', 'sankey', 'steps']):
-                        top_paths_txt = res['top_paths'].head(15).to_string()
-                        context_str += f"\n=== TOP CUSTOMER PATHS ===\n{top_paths_txt}\n"
-                        context_str += "\n[NOTE: User is asking about the Sankey Diagram flow.]"
-
-                    elif any(x in p_lower for x in ['matrix', 'probability', 'transition', 'heatmap']):
-                        context_str += "\n[NOTE: User is asking about Transition Probabilities.]"
-
-                    elif any(x in p_lower for x in ['removal', 'value', 'impact', 'lose']):
-                        context_str += "\n[NOTE: User is asking about Removal Effects.]"
-
-                    elif any(x in p_lower for x in ['forest', 'plot', 'uncertainty', 'confidence']):
-                        context_str += "\n[NOTE: User is asking about the Forest Plot/Confidence lines.]"
-
-                    try:
-                        response = nexus.chat_with_data(prompt, context_str, None)
-                        placeholder.markdown(response)
-                        st.session_state.messages.append({"role": "assistant", "content": response})
-                    except Exception as e:
-                        placeholder.error(f"AI Error: {e}")
+                        try:
+                            response = nexus.chat_with_data(prompt, context_str, None)
+                            placeholder.markdown(response)
+                            st.session_state.messages.append({"role": "assistant", "content": response})
+                        except Exception as e:
+                            placeholder.error(f"AI Error: {e}")
