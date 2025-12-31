@@ -178,12 +178,29 @@ if st.session_state.results:
 
         # --- TAB 3: REPORT ---
         with tab_report:
+            st.subheader("📝 Executive Strategy")
+            if res.get('pdf_path') and os.path.exists(res['pdf_path']):
+                with open(res['pdf_path'], "rb") as pdf_file:
+                    st.download_button(
+                        label="📄 Download PDF Report",
+                        data=pdf_file,
+                        file_name="Nexus_Strategy_Report.pdf",
+                        mime="application/pdf",
+                        type="primary"
+                    )
+            
+            st.divider()
             report = res.get('report_data', {})
-            st.markdown(f"#### 1. Executive Summary\n<div class='report-box'>{report.get('executive_summary', 'N/A')}</div>", unsafe_allow_html=True)
-            c_r1, c_r2 = st.columns(2)
-            c_r1.info(f"**Optimization:** {report.get('removal_insight', 'N/A')}")
-            c_r2.warning(f"**Friction:** {report.get('q_matrix_insight', 'N/A')}")
-
+            st.markdown("**Executive Summary**")
+            st.markdown(f"<div class='report-box'>{report.get('executive_summary', 'Pending Analysis...')}</div>", unsafe_allow_html=True)
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**Optimization Opportunities**")
+                st.info(report.get('removal_insight', 'N/A'))
+            with c2:
+                st.markdown("**Friction Points**")
+                st.warning(report.get('q_matrix_insight', 'N/A'))
     # === RIGHT COLUMN: NEXUS CHAT (SMART CONTEXT MODE) ===
     if col_chat:
         with col_chat:
