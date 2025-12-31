@@ -5,6 +5,9 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 from PIL import Image
+os.makedirs("output", exist_ok=True)
+
+os.makedirs("temp_uploads", exist_ok=True)
 
 # Add 'src' to python path
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
@@ -141,19 +144,26 @@ if st.session_state.results:
 
         # --- TAB 2: VISUALS ---
         with tab_viz:
-            st.markdown("### Attribution Uncertainty Plot")
-            forest_path = Path("output/consensus_attribution.png").absolute()
-            if forest_path.exists():
-                st.image(str(forest_path), caption="Consensus Attribution", use_container_width=True)
+            st.markdown("### 🎯 Attribution Uncertainty Plot")
+            # Must match main.py exactly: "attribution_forest_plot.png"
+            forest_path = os.path.join("output", "attribution_forest_plot.png")
+    
+            if os.path.exists(forest_path):
+                st.image(forest_path, caption="Consensus Attribution", use_container_width=True)
             else:
-                st.warning("Forest plot not found.")
-                
+                 st.warning(f"⚠️ Forest plot not found. Path checked: {forest_path}")
+        
             st.divider()
-            st.markdown("### Customer Journey Flow")
-            sankey_path = Path("output/journey_sankey.html").absolute()
-            if sankey_path.exists():
+    
+            st.markdown("### 🌊 Customer Journey Flow")
+             # Must match main.py exactly: "customer_journey_sankey.html"
+            sankey_path = os.path.join("output", "customer_journey_sankey.html")
+    
+            if os.path.exists(sankey_path):
                 with open(sankey_path, 'r', encoding='utf-8') as f:
-                    st.components.v1.html(f.read(), height=700, scrolling=True)
+                        st.components.v1.html(f.read(), height=700, scrolling=True)
+            else:
+                st.warning("⚠️ Journey plot not found.")
 
         # --- TAB 3: REPORT ---
         with tab_report:
