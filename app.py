@@ -28,16 +28,22 @@ if "messages" not in st.session_state:
 
 load_dotenv()
 
-# --- 3. CUSTOM CSS ---
+# --- 3. CUSTOM CSS (FIXED FOR HIGHLIGHTS) ---
 st.markdown("""
 <style>
     .main-header { font-size: 2.2rem; color: #0F172A; font-weight: 700; margin-bottom: 0px; }
     .sub-text { font-size: 1rem; color: #64748B; margin-bottom: 20px; }
     
+    /* Container styling */
     [data-testid="stDataFrame"] { background-color: transparent !important; border: none !important; padding: 0px !important; width: 100% !important; }
     [data-testid="stDataFrame"] > div { background-color: #FFFFFF !important; border-radius: 8px !important; width: 100% !important; }
+    
+    /* Header Styling - Keep White */
     th { background-color: #FFFFFF !important; color: #475569 !important; font-weight: 600 !important; border-bottom: 2px solid #E2E8F0 !important; }
-    td { background-color: #FFFFFF !important; color: #1E293B !important; font-size: 0.95rem !important; border-bottom: 1px solid #F1F5F9 !important; }
+    
+    /* Cell Styling - MODIFIED: Removed '!important' background to allow highlights */
+    td { color: #1E293B !important; font-size: 0.95rem !important; border-bottom: 1px solid #F1F5F9 !important; }
+    
     .report-box { background-color: #F8FAFC; padding: 20px; border-radius: 8px; border-left: 4px solid #3B82F6; margin-bottom: 20px; font-size: 0.95rem; }
 </style>
 """, unsafe_allow_html=True)
@@ -107,7 +113,7 @@ if st.session_state.results:
                 df_roi = res['prior_df'][['channel', 'roi', 'mmm_share', 'attr_weight']].copy()
                 df_roi.columns = ['Channel', 'ROI', 'MMM Share', 'Attribution']
                 
-                # --- APPLY BUPU STYLING ---
+                # --- APPLY BUPU STYLING (FORCED) ---
                 styled_roi = df_roi.style.background_gradient(cmap='BuPu', subset=['ROI', 'Attribution'])\
                     .format({'ROI': "{:.2f}", 'MMM Share': "{:.1%}", 'Attribution': "{:.1%}"})
                 
@@ -129,7 +135,6 @@ if st.session_state.results:
 
             st.divider()
             st.subheader("Removal Effects")
-            # --- FIX: ABSOLUTE PATH FOR CLOUD RUN ---
             removal_path = Path("output/removal_effects.png").absolute()
             if removal_path.exists():
                 st.image(str(removal_path), use_container_width=True)
@@ -137,7 +142,6 @@ if st.session_state.results:
         # --- TAB 2: VISUALS ---
         with tab_viz:
             st.markdown("### Attribution Uncertainty Plot")
-            # --- FIX: ABSOLUTE PATH FOR CLOUD RUN ---
             forest_path = Path("output/consensus_attribution.png").absolute()
             if forest_path.exists():
                 st.image(str(forest_path), caption="Consensus Attribution", use_container_width=True)
@@ -170,4 +174,3 @@ if st.session_state.results:
             if prompt := st.chat_input("Ask Nexus..."):
                 st.session_state.messages.append({"role": "user", "content": prompt})
                 st.rerun()
-   
