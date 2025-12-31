@@ -23,7 +23,7 @@ sidebar_state = "collapsed" if st.session_state.results else "expanded"
 
 st.set_page_config(
     page_title="Nexus | Strategic Marketing AI",
-    page_icon="🧠",
+    page_icon="🎯",
     layout="wide",
     initial_sidebar_state=sidebar_state
 )
@@ -111,6 +111,7 @@ with st.sidebar:
 st.markdown('<div class="main-header">Nexus Intelligence</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-text">AI-Powered Marketing Attribution & Strategy</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-text">Please upload ga_2.csv and mmm_data_2016_2017.csv. If sidebar is not visible please click on arrows.</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-text">Models are maths heavy, so processing will take 45-60 seconds.</div>', unsafe_allow_html=True)
 
 # --- MAIN PROCESS LOGIC ---
 if process_btn:
@@ -183,7 +184,7 @@ if st.session_state.results:
             
             # ROI Table (All White)
             with col1:
-                st.subheader("💰 ROI vs Attribution")
+                st.subheader("ROI vs Attribution")
                 df_roi = res['prior_df'][['channel', 'roi', 'mmm_share', 'attr_weight']].copy()
                 df_roi.columns = ['Channel', 'ROI', 'MMM Share', 'Attribution']
                 
@@ -197,7 +198,7 @@ if st.session_state.results:
 
             # Confidence Table (All White + Percentages)
             with col2:
-                st.subheader("📉 Attribution Confidence")
+                st.subheader("Attribution Confidence")
                 df_sigma = res['prior_df'][['channel', 'attr_weight', 'sigma', 'confidence']].copy()
                 df_sigma.columns = ['Channel', 'Attribution', 'Sigma', 'Confidence']
                 
@@ -221,7 +222,7 @@ if st.session_state.results:
             st.divider()
 
             # --- TOP CONVERSION PATHS (First) ---
-            st.subheader("🛣️ Top Conversion Paths")
+            st.subheader("Top Conversion Paths")
             df_paths = res['top_paths'].head(10).copy()
             
             st.dataframe(
@@ -235,14 +236,14 @@ if st.session_state.results:
             st.divider()
 
             # --- REMOVAL EFFECTS (Below) ---
-            st.subheader("❌ Removal Effects")
+            st.subheader("Removal Effects")
             if os.path.exists(res['img_paths']['removal']):
                 rem_img = Image.open(res['img_paths']['removal'])
                 st.image(rem_img, use_container_width=True)
 
         # --- TAB 2: VISUALS ---
         with tab_viz:
-            st.markdown("###  Attribution Uncertainty Plot")
+            st.markdown("### Attribution Uncertainty Plot")
             if res.get('forest_path') and os.path.exists(res['forest_path']):
                 img = Image.open(res['forest_path'])
                 st.image(img, caption="Consensus Attribution (Markov + Shapley)", use_container_width=True)
@@ -251,7 +252,7 @@ if st.session_state.results:
                 
             st.divider()
             
-            st.markdown("###  Customer Journey Flow")
+            st.markdown("### Customer Journey Flow")
             if os.path.exists(res['sankey_path']):
                 with open(res['sankey_path'], 'r', encoding='utf-8') as f:
                     html_data = f.read()

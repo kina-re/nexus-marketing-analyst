@@ -4,3 +4,8 @@ backgroundColor = "#F8FAFC" # Very light grey/white background
 secondaryBackgroundColor = "#E2E8F0" # Sidebar grey
 textColor = "#0F172A"       # Dark Slate for high readability
 font = "sans serif"
+
+[server]
+enableCORS = false
+enableXsrfProtection = false
+headless = true
