@@ -68,3 +68,7 @@ Thumbs.db
 # Reports / generated files
 reports/*.html
 reports/*.pdf
+
+# Runtime uploads and generated reports
+temp_uploads/
+output/*.pdf
